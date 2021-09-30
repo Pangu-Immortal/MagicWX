@@ -1,6 +1,7 @@
 package xposed.qihao.magicwx;
 
 import android.content.Context;
+import android.util.Log;
 
 import java.util.Date;
 import java.util.Random;
@@ -19,6 +20,7 @@ public class BiliHook {
     private static ClassLoader classLoader;
     private static Object ebx;
     private static int a;
+    private static String TAG = "BiliHook";
 
     public static void init(Context application) {
         classLoader = application.getClassLoader();
@@ -31,7 +33,7 @@ public class BiliHook {
                 ChatMessage, new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                        LogUtil.d(a + ",参数 = " + param.args[0]);
+                        Log.d(TAG, a + ",参数 = " + param.args[0]);
                         if (a <= 5) {
                             sendText(ChatMessage);
                         }
@@ -42,7 +44,7 @@ public class BiliHook {
                 ChatMessage, new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                        LogUtil.d("参数 = " + param.args[0]);
+                        Log.d(TAG,"参数 = " + param.args[0]);
                         Object o = param.args[0];
                         int a = (int) XposedHelpers.callMethod(o, "getType");
                         try {
@@ -52,7 +54,7 @@ public class BiliHook {
                                 case -1001:
                                     break;
                                 case 1:
-                                    LogUtil.d("文本消息 ：" + o);
+                                    Log.d(TAG,"文本消息 ：" + o);
                                     if (a <= 5) {
                                         sendText(ChatMessage);
                                     }
@@ -97,7 +99,7 @@ public class BiliHook {
         XposedHelpers.findAndHookConstructor(BaseTypedMessage, ChatMessage, new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                LogUtil.d("参数1 = " + param.args[0]);
+                Log.d(TAG,"参数1 = " + param.args[0]);
             }
         });
 
@@ -106,10 +108,10 @@ public class BiliHook {
                 int.class, String.class, String.class, Conversation, new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                        LogUtil.d("参数1 = " + param.args[0]);
-                        LogUtil.d("参数2 = " + param.args[1]);
-                        LogUtil.d("参数3 = " + param.args[2]);
-                        LogUtil.d("参数4 = " + param.args[3]);
+                        Log.d(TAG,"参数1 = " + param.args[0]);
+                        Log.d(TAG,"参数2 = " + param.args[1]);
+                        Log.d(TAG,"参数3 = " + param.args[2]);
+                        Log.d(TAG,"参数4 = " + param.args[3]);
                     }
                 });
 
@@ -120,7 +122,7 @@ public class BiliHook {
 
     private static void sendText(Class ChatMessage) {
 
-        LogUtil.d("开始构造发送消息……");
+        Log.d(TAG,"开始构造发送消息……");
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -143,7 +145,7 @@ public class BiliHook {
                 XposedHelpers.callStaticMethod(ebx, "a", 0, ecoo, ChatMessageo);
 
                 XposedHelpers.callMethod(ebxo, "c", ChatMessageo);
-                LogUtil.d(ChatMessageo);
+                Log.d(TAG,ChatMessageo.toString());
                 a++;
                 try {
                     Thread.sleep(2000);
