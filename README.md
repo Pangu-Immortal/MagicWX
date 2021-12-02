@@ -1,4 +1,8 @@
-# MagicWX 🔥免root实现 Android改机（一键新机），微信无限多开等。
+# MagicWX 
+
+***
+
+##🔥免root实现 Android改机（一键新机），微信无限多开等。
 
 ## 欢迎star，欢迎Fork
 
