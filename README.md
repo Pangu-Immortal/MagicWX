@@ -17,9 +17,9 @@
 ### 公共场所、禁止吸烟。
 
 
-| ![image](https://github.com/yugu88/MagicWX/blob/master/device.png) | ![image](https://img-blog.csdnimg.cn/20200324103336571.png) |
+| ![image](https://img-blog.csdnimg.cn/20200319191809959.jpg) | ![image](https://img-blog.csdnimg.cn/20200324103336571.png) |
 | ---- | ---- |
-| ![image](https://img-blog.csdnimg.cn/20200319191809959.jpg) | ![image](https://img-blog.csdnimg.cn/2019123116334614.jpeg) |
+
 
 
 
