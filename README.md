@@ -21,6 +21,10 @@
 ---
 
 
+![avatar](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/qrcode_for_gh_5d1938320a76_344.jpg)
+
+
+
 ## 抗击疫情、人人有责
 
 ##### 关爱自己、注意个人卫生。
