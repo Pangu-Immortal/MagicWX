@@ -1,4 +1,4 @@
-package com.bignerdranch.android.draganddraw
+package com.bignerdranch.android.sunset
 
 import org.junit.Test
 

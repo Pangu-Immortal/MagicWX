@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'com.bignerdranch.android.draganddraw'
+    namespace 'com.bignerdranch.android.sunset'
     compileSdk 33
 
     defaultConfig {
-        applicationId "com.bignerdranch.android.draganddraw"
+        applicationId "com.bignerdranch.android.sunset"
         minSdk 23
         targetSdk 32
         versionCode 1
