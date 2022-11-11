@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.bignerdranch.android.photogallery">
+
+    <permission
+        android:name="com.bignerdranch.android.photogallery.PRIVATE"
+        android:protectionLevel="signature" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="com.bignerdranch.android.photogallery.PRIVATE" />
+
+    <application
+        android:name=".PhotoGalleryApplication"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:name=".PhotoGalleryActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".PhotoPageActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize" />
+
+        <receiver
+            android:name=".NotificationReceiver"
+            android:exported="false">
+            <intent-filter android:priority="-999">
+                <action android:name="com.bignerdranch.android.photogallery.SHOW_NOTIFICATION" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+</manifest>
