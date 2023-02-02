@@ -53,6 +53,7 @@ ___
 
 ### 公共场所、禁止吸烟。
 
+# 欢迎关注公众号，后续文章的更新和技术的讲解都会发布在公众号里。 
 
 
 ![avatar](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/qrcode_for_gh_5d1938320a76_344.jpg)
