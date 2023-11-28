@@ -14,7 +14,3 @@ dependencyResolutionManagement {
 }
 rootProject.name = "MagicWX"
 include ':app'
-include ':Sunset'
-include ':DragAndDraw'
-include ':PhotoGallery'
-include ':NerdLauncher'
