@@ -15,7 +15,8 @@ https://huggingface.co/TIEMING/rwkv-world-0.4B-onnx/blob/main/world-CHNtuned-int
 Telegram: https://t.me/+V7HSo1YNzkFkY2M1
 
 
-![avatar](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/qrcode_for_gh_5d1938320a76_344.jpg)
+![avatar](https://github.com/Pangu-Immortal/MagicWX/blob/Ai/img.png)
+
 
 
 ``` nginx
@@ -33,8 +34,7 @@ Telegram: https://t.me/+V7HSo1YNzkFkY2M1
 ## 交流 欢迎star，欢迎Fork
 
 
-
-![avatar](https://github.com/Pangu-Immortal/MagicWX/blob/Ai/img.png)
+![avatar](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/qrcode_for_gh_5d1938320a76_344.jpg)
 
 
 ---
