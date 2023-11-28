@@ -5,25 +5,30 @@ plugins {
     id 'kotlin-kapt'
 }
 android {
-    namespace 'xposed.qihao.magicwx'
+    namespace 'com.qihao.open.rwkv'
     compileSdk 34
 
     defaultConfig {
-        applicationId "xposed.qihao.magicwx"
-        minSdk 23
+        applicationId "com.qihao.open.rwkv"
+        minSdk 24
         targetSdk 34
         versionCode 1
         versionName "1.0"
-        vectorDrawables {
-            useSupportLibrary true
-        }
+
     }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+
+    // 这些类型的文件在打包应用时将不会被压缩，保持其原始格式。
+    aaptOptions {
+        noCompress 'tflite', 'txt', 'json', "ort"
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -38,22 +43,14 @@ android {
         buildConfig true
         compose true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.4.3"
-    }
-    packagingOptions {
-        resources {
-            excludes += '/META-INF/{AL2.0,LGPL2.1}'
-        }
-    }
 }
 
 dependencies {
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
+
     implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.10.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'androidx.activity:activity-compose:1.8.0'
-    implementation 'androidx.compose.ui:ui:1.6.0-alpha07'
-    implementation "androidx.compose.ui:ui-tooling-preview:1.6.0-alpha07"
-    implementation 'androidx.compose.material:material:1.5.0-alpha01'
+
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:latest.release'
+    implementation 'com.google.code.gson:gson:2.10.1'
 }

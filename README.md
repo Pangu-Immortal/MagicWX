@@ -6,12 +6,16 @@
 
 ***
 
+使用方式：下载模型 https://huggingface.co/TIEMING/rwkv-world-0.4B-onnx/tree/main ，把模型复制到Assets文件夹
+
+下载APP安装体验(RWKV-0.4B-World-CHNtuned-INT8):
+https://huggingface.co/TIEMING/rwkv-world-0.4B-onnx/blob/main/world-CHNtuned-int8.apk
 
 
 Telegram: https://t.me/+V7HSo1YNzkFkY2M1
 
 
-
+![avatar](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/qrcode_for_gh_5d1938320a76_344.jpg)
 
 
 ``` nginx
@@ -30,7 +34,7 @@ Telegram: https://t.me/+V7HSo1YNzkFkY2M1
 
 
 
-![avatar](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/qrcode_for_gh_5d1938320a76_344.jpg)
+![avatar](https://github.com/Pangu-Immortal/MagicWX/blob/Ai/img.jpg)
 
 
 ---
