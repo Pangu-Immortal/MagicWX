@@ -34,7 +34,7 @@ Telegram: https://t.me/+V7HSo1YNzkFkY2M1
 
 
 
-![avatar](https://github.com/Pangu-Immortal/MagicWX/blob/Ai/img.jpg)
+![avatar](https://github.com/Pangu-Immortal/MagicWX/blob/Ai/img.png)
 
 
 ---
