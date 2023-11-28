@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace 'com.bignerdranch.android.nerdlauncher'
-    compileSdk 33
+    compileSdk 34
 
     defaultConfig {
         applicationId "com.bignerdranch.android.nerdlauncher"
         minSdk 23
-        targetSdk 32
+        targetSdk 34
         versionCode 1
         versionName "1.0"
     }
@@ -20,12 +20,25 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+    //AS4 以上版本使用这个配置dataBinding
+    buildFeatures {
+        viewBinding true
+        aidl true
+        buildConfig true
+    }
 }
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
-    implementation 'androidx.appcompat:appcompat:1.5.1'
-    implementation 'androidx.constraintlayout:constraintlayout:2.2.0-alpha04'
-    implementation 'androidx.recyclerview:recyclerview:1.2.1'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.0-alpha13'
+    implementation 'androidx.recyclerview:recyclerview:1.3.1'
 
 }
