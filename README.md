@@ -6,18 +6,21 @@
 
 ***
 
-使用方式：下载模型 https://huggingface.co/TIEMING/rwkv-world-0.4B-onnx/tree/main ，把模型复制到Assets文件夹
+使用方式：下载模型 https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/model.onnx
+把模型复制到Assets文件夹, 请对比下图的结构。
 
 下载APP安装体验(RWKV-0.4B-World-CHNtuned-INT8):
-https://huggingface.co/TIEMING/rwkv-world-0.4B-onnx/blob/main/world-CHNtuned-int8.apk
+https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/rwkv4-0.4b-int8.apk
 
+https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.0/rwkv5-3b-int8-cn.apk
 
-Telegram: https://t.me/+V7HSo1YNzkFkY2M1
 
 
 ![avatar](https://github.com/Pangu-Immortal/MagicWX/blob/Ai/img.png)
 
 
+
+Telegram: https://t.me/+V7HSo1YNzkFkY2M1
 
 ``` nginx
 
