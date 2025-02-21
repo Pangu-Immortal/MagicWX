@@ -22,7 +22,7 @@ https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.0/rwkv5-3b-int8-
 Telegram: https://t.me/+V7HSo1YNzkFkY2M1
 
 
-## 声明（每天找我的人太多，又太菜，很无奈，请理解）
+## 声明（每天找我的人太多，很无奈，请理解）
 
 - 想咨询Google上架相关问题，1000元/小时(不满一小时按一小时算)
 
@@ -75,7 +75,7 @@ Telegram: https://t.me/+V7HSo1YNzkFkY2M1
 ---
 
 ## 支持
-暂不考虑4x，目前已兼容 5.0 ～ 14.0并跟进后续新系统。
+暂不考虑4x，目前已兼容 5.0 ～ 16.0并跟进后续新系统。
 
 
 根据Google上架的要求，已经适配了：targetVersion 33
