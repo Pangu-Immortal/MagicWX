@@ -5,6 +5,7 @@
 > <p align="right">——David Emery</p>
 
 ***
+![avatar](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/getqrcode.png)
 
 使用方式：下载模型 https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/model.onnx
 把模型复制到Assets文件夹, 请对比下图的结构。
@@ -14,12 +15,12 @@ https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/rwkv4-0.4b-int
 
 https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.0/rwkv5-3b-int8-cn.apk
 
-
+### 工程目录示例：
 ![avatar](https://github.com/Pangu-Immortal/MagicWX/blob/Ai/img.png)
 
 
 
-Telegram: https://t.me/+V7HSo1YNzkFkY2M1
+这只是冰山一角，加Telegram群: https://t.me/+V7HSo1YNzkFkY2M1
 
 
 ## 声明🔥
@@ -71,7 +72,7 @@ Telegram: https://t.me/+V7HSo1YNzkFkY2M1
 ## 交流 欢迎star，欢迎Fork
 
 
-![avatar](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/qrcode_for_gh_5d1938320a76_344.jpg)
+![avatar](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/getqrcode.png)
 
 
 ---
@@ -122,8 +123,7 @@ ___
 
 # 欢迎关注公众号，后续文章的更新和技术的讲解都会发布在公众号里。 
 
-
-![avatar](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/qrcode_for_gh_5d1938320a76_344.jpg)
+![avatar](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/getqrcode.png)
 
 
 
