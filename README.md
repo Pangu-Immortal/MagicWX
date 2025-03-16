@@ -1,147 +1,122 @@
-# MagicWX
+# MagicWX（这里只是冰山一角）
 
 > The only people who have anything to fear from free software are those whose products are worth even less.
 >
 > <p align="right">——David Emery</p>
 
-***
-![avatar](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/getqrcode.png)
-
-使用方式：下载模型 https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/model.onnx
-把模型复制到Assets文件夹, 请对比下图的结构。
-
-下载APP安装体验(RWKV-0.4B-World-CHNtuned-INT8):
-https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/rwkv4-0.4b-int8.apk
-
-https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.0/rwkv5-3b-int8-cn.apk
-
-### 工程目录示例：
-![avatar](https://github.com/Pangu-Immortal/MagicWX/blob/Ai/img.png)
-
-
-
-这只是冰山一角，加Telegram群: https://t.me/+V7HSo1YNzkFkY2M1
-
-
-## 声明🔥
-
-- 咨询Google上架或者封号或者报毒等相关问题。
-
-- 深度定制，也提供收费服务。
-
-- 本人提供aab 保活服务 和 马甲包服务，彻底解决关联问题，价格私聊。
-
-- 如果你之前有打赏过，打6折，提过PR者，免费
-
-- 有问题欢迎提Issue，有想法欢迎提PR或与我交流
-
-
-
-## 收费功能（这只是冰山一角）
-
-（所有功能都提供Android15适配，包括Android16预览版）
-
-- 【App】安装后自启动，从市场下载之后，不点击App，安装的瞬间自己就可以启动。
-- 【App】无权限后台弹Activity，可以在任意的时机，任何想弹的时候都可以弹出。不需要权限也不需要锁屏。
-- 【App】保活，不停的点击强制停止，死不了。可以完美的扛住点击强制停止操作。
-- 【App】拉活，彻底死亡的状态下，可以15分钟内，唤醒自己。
-- 【App】防卸载，可以防止用户卸载，点击卸载无反应。
-- 【App】无感知卸载竞品，可以无感知卸载手机中任意App。
-- 【App】隐藏桌面图标，可以安装后立刻隐藏自己，也可以在想要隐藏时，随时隐藏，支持Android 15。
-- 【App】马甲包服务，彻底解决关联问题。为批量马甲包提供服务。
-- 【App】报病毒优化，无需重新打包，净化App，处理所有App的报毒问题。
-- 【App】账号隔离，为开发者提供全套完善的账号隔离体系，完整的账号隔离方案，防止账号关联。
-- 【App】IP漂移，支持拉取高ecpm地区的admob。
-- 【App】模拟iOS，支持Android设备模拟并拉取iOS的admob，超大幅度提高ecpm。
-- 【工具】机型模拟，支持批量刷下载量，可无成本快速刷百万下载量，迅速提高商店排名。
-- 【工具】国内机型保活，运动类、外卖类、聊天类等想实现永生不死，不被系统杀死，已经为多款App接入。
-- 【工具】防抓包处理，数据脱敏。棋牌类大规模上架等操作。
-- 【工具】多开、双开，无限分身等。
-- 【工具】大模型定制化开发，私有数据训练，NFSW模型开发，成人模型制作，成人话术，成人照片，成人视频，均可以训练制作私有化专属大模型。
-- 【工具】数字人、换脸、文生图、图生图，图生视频，图生数字人，制作明星、自己、家人的数字人。老照片复活，和已逝去的亲人对话。
-- 【工具】云游戏、云手机搭建，提供全套云端容器方案。打通云原生GPU、定制化服务器、全光网络、协同渲染、AI内容生成、云原生工具包等核心技术路径。
-- 【工具】定制化播放器，提供加密播放器、3D播放器、云播放器等。可提供对任意视频编解码定制服务。为AR、VR、MR场景提供服务。
-- 【工具】滤镜定制，可提供视频、相机、图片等滤镜处理，也可根据竞品效果进行模仿。
-- 【工具】AI 多场景定制，多年AI行业经验，可为小团队提供定制化的AI服务。
-- 【工具】ROM 定制，可提供各类定制化功能的Android系统，也可提供车载系统的定制化。提供软硬件交互的外包服务。
-
-
-
-🔥免root实现 Android 改机（一键新机），微信双开、无限多开等功能、支持xposed模块。
-
-## 交流 欢迎star，欢迎Fork
-
-
-![avatar](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/getqrcode.png)
-
-
 ---
 
-## 支持
-暂不考虑4x，目前已兼容 5.0 ～ 16.0并跟进后续新系统。
+![QR Code](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/getqrcode.png)
 
+## 使用指南
 
-根据Google上架的要求，已经适配了：targetVersion 33
+1. **下载模型**：[MagicWX 模型](https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/model.onnx)
+2. **放置模型**：将下载的模型文件复制到 `Assets` 文件夹，并确保文件结构与下图一致。
 
+### 下载体验版 APP（RWKV-0.4B-World-CHNtuned-INT8）
 
-***稳定性未经大量测试，仅供学习交流，请勿用于其他用途***
+- [rwkv4-0.4b-int8.apk](https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/rwkv4-0.4b-int8.apk)
+- [rwkv5-3b-int8-cn.apk](https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.0/rwkv5-3b-int8-cn.apk)
+
+### 工程目录示例
+![工程结构](https://github.com/Pangu-Immortal/MagicWX/blob/Ai/img.png)
+
+更多内容请加入 Telegram 群：[点击加入](https://t.me/+V7HSo1YNzkFkY2M1)
+
+## 🔥 声明
+
+- **Google 上架、封号、报毒相关问题咨询**
+- **提供深度定制和收费服务**
+- **提供 AAB 保活和马甲包服务，彻底解决关联问题（价格私聊）**
+- **曾打赏用户享受 6 折优惠，提交过 PR 的用户免费**
+- **问题反馈请提交 Issue，欢迎贡献 PR**
+
+## 收费功能（部分示例）
+
+**所有功能均支持 Android 15 及 Android 16 预览版适配**
+
+### App 相关
+- **自启动**：安装后自动启动，无需手动点击
+- **后台弹出 Activity**：无需权限即可在任何时机弹出界面
+- **强力保活**：可抵抗“强制停止”操作，持续存活
+- **拉活机制**：彻底死亡状态下可在 15 分钟内唤醒
+- **防卸载**：阻止用户卸载，点击卸载无反应
+- **无感知卸载竞品**：可无感知卸载手机中任意 App
+- **隐藏桌面图标**：安装后可立即隐藏，支持随时隐藏/显示
+- **马甲包服务**：批量处理，彻底规避关联问题
+- **报病毒优化**：无需重新打包，即可优化病毒检测
+- **账号隔离**：提供完整的账号隔离方案，防止账号关联
+- **IP 漂移**：支持高 eCPM 地区 AdMob 资源获取
+- **iOS 模拟**：支持 Android 设备模拟 iOS 以获取更高 eCPM
+
+### 工具类功能
+- **机型模拟**：批量刷下载量，提升商店排名
+- **国内机型保活**：支持运动、外卖、聊天类 App 长期存活
+- **防抓包**：数据脱敏，适用于棋牌类等高风险应用
+- **多开/分身**：支持无限多开，适用于各类应用
+- **AI 定制**：大模型训练、NFSW 模型、成人话术/图像/视频生成
+- **数字人 & 换脸**：文生图、图生图、图生视频，老照片复活等
+- **云游戏 & 云手机**：提供完整的云端 GPU 方案
+- **定制播放器**：加密播放器、3D 播放器、云播放器等
+- **滤镜定制**：支持视频、相机、图片滤镜，提供竞品效果仿制
+- **AI 定制化服务**：适用于小团队的 AI 需求定制
+- **ROM 定制**：可定制 Android 及车载系统，提供软硬件交互开发
+
+🔥 **免 Root 实现 Android 改机、一键新机、微信无限多开，支持 Xposed 模块**
+
+## 交流 & 贡献
+
+欢迎 Star & Fork！
+
+![QR Code](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/getqrcode.png)
+
+## 兼容性 & 支持
+
+- **暂不支持 Android 4.x**
+- **已兼容 Android 5.0 - 16.0，并持续跟进新系统**
+- **符合 Google Play targetVersion 33 要求**
+
+🚨 **本项目仅供学习交流，未经大量测试，稳定性无法保证。请勿用于非法用途！**
 
 ## 架构说明
-本项目区分32位与64位，目前是2个不同的app，如在Demo已安装列表内无法找到需要开启的app说明不支持，请编译其他的架构。
 
-#### Xposed相关
-- 已支持使用XP模块
-- Xposed已粗略过检测，[Xposed Checker](https://www.coolapk.com/apk/190247)、[XposedDetector](https://github.com/vvb2060/XposedDetector) 均无法检测
+本项目区分 32 位和 64 位，目前包含两个独立 App。如果 Demo 中找不到已安装的 App，请尝试编译适配的架构版本。
 
+### Xposed 相关
 
-## 计划
-- 更多的Service API 虚拟化（目前许多是使用系统API，只有少数已实现）
-- 提供更多接口给开发者（虚拟定位、应用注入、风控检测、验证码跳过、分身屏蔽广告等）
+- **支持 Xposed 模块**
+- **已规避 Xposed 检测，[Xposed Checker](https://www.coolapk.com/apk/190247) 和 [XposedDetector](https://github.com/vvb2060/XposedDetector) 均无法检测**
 
-## 声明
-本项目为免费开源项目，日常维护耗费大量精力。仅个人兴趣交流。
+## 开发计划
 
-``` nginx
+- **更多 Service API 虚拟化**（当前大部分功能基于系统 API，仅部分实现虚拟化）
+- **提供更多开发者接口**（虚拟定位、应用注入、风控检测、验证码跳过、分身屏蔽广告等）
 
-提示：代码已经全部回退。
+## 开源声明
 
- doc 此工程不再维护。主人已回家种菜，蔬菜多营养好，纯绿色，无污染。
+本项目为免费开源项目，日常维护耗费大量精力，仅出于个人兴趣交流。
 
-说明：本人非盈利性开发，仅个人兴趣交流，但凡有兴趣的都可star，禁止用于任何商业盈利。
+```nginx
+提示：
+doc 主人已回家种菜，蔬菜营养好，纯绿色，无污染。
 
-``` 
+说明：
+本项目为非盈利性开发，仅供个人学习交流。
+禁止用于任何商业盈利用途。
+```
 
 ---
 
-## 抗击疫情、人人有责
+## 公益倡议
 
-##### 关爱自己、注意个人卫生。
+🌍 **抗击疫情，人人有责！**
 
-___
+💡 **关爱自己，注意个人卫生！**
 
-### 公共场所、禁止吸烟。
+🚭 **公共场所，禁止吸烟！**
 
-# 欢迎关注公众号，后续文章的更新和技术的讲解都会发布在公众号里。 
+## 关注公众号
 
-![avatar](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/getqrcode.png)
+后续文章更新和技术讲解将在公众号发布，欢迎关注！
 
-
-
-
-
-| ![image](https://img-blog.csdnimg.cn/20200319191809959.jpg) | ![image](https://img-blog.csdnimg.cn/20200324103336571.png) |
-|-------------------------------------------------------------|-------------------------------------------------------------|
-
-
-
-
-``` nginx
-
-提示：
-doc 主人已回家种菜，蔬菜多营养好，纯绿色，无污染。
-
-说明：本人非盈利性开发，仅个人兴趣交流，但凡有兴趣的都可fork，禁止用于任何商业盈利。
-
-```
-
-
+![QR Code](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/getqrcode.png)
