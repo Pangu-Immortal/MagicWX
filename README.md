@@ -1,3 +1,5 @@
+![访客统计](https://count.getloli.com/get/@MagicWX?theme=rule34)
+
 # MagicWX（这里只是冰山一角）
 
 <div align="center">
@@ -140,3 +142,18 @@ doc 主人已回家种菜，蔬菜营养好，纯绿色，无污染。
 [![Star History Chart](https://api.star-history.com/svg?repos=Pangu-Immortal/MagicWX&type=Date)](https://star-history.com/#Pangu-Immortal/MagicWX&Date)
 
 </div>
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
