@@ -8,6 +8,10 @@
 
 </div>
 
+<p align="center">
+  <b>🌟 如果觉得有帮助，请点击 <a href="https://github.com/Pangu-Immortal/MagicWX/stargazers">Star</a> 支持一下，关注不迷路！🌟</b>
+</p>
+
 > The only people who have anything to fear from free software are those whose products are worth even less.
 >
 > <p align="right">——David Emery</p>
