@@ -1,18 +1,11 @@
+
 <div align="center">
 
 ![萌萌计数器](https://count.getloli.com/get/@MagicWX?theme=rule34)
 
 </div>
 
-
 # MagicWX（这里只是冰山一角）
-
-<div align="center">
-
-[![Stars](https://img.shields.io/github/stars/Pangu-Immortal/MagicWX?style=for-the-badge&logo=github&color=yellow)](https://github.com/Pangu-Immortal/MagicWX)
-[![Forks](https://img.shields.io/github/forks/Pangu-Immortal/MagicWX?style=for-the-badge&logo=github&color=blue)](https://github.com/Pangu-Immortal/MagicWX/fork)
-[![访问量](https://komarev.com/ghpvc/?username=Pangu-Immortal-MagicWX&label=访问量&color=ff6b6b&style=for-the-badge)](https://github.com/Pangu-Immortal/MagicWX)
-</div>
 
 > The only people who have anything to fear from free software are those whose products are worth even less.
 >
@@ -138,12 +131,6 @@ doc 主人已回家种菜，蔬菜营养好，纯绿色，无污染。
 ---
 
 ## ⭐ Star 趋势
-
-<div align="center">
-
-[![Star History Chart](https://api.star-history.com/svg?repos=Pangu-Immortal/MagicWX&type=Date)](https://star-history.com/#Pangu-Immortal/MagicWX&Date)
-
-</div>
 
 ## Contributing
 
