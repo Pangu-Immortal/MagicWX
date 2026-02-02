@@ -1,4 +1,9 @@
-![访客统计](https://count.getloli.com/get/@MagicWX?theme=rule34)
+<div align="center">
+
+![萌萌计数器](https://count.getloli.com/get/@MagicWX?theme=rule34)
+
+</div>
+
 
 # MagicWX（这里只是冰山一角）
 
@@ -7,9 +12,6 @@
 [![Stars](https://img.shields.io/github/stars/Pangu-Immortal/MagicWX?style=for-the-badge&logo=github&color=yellow)](https://github.com/Pangu-Immortal/MagicWX)
 [![Forks](https://img.shields.io/github/forks/Pangu-Immortal/MagicWX?style=for-the-badge&logo=github&color=blue)](https://github.com/Pangu-Immortal/MagicWX/fork)
 [![访问量](https://komarev.com/ghpvc/?username=Pangu-Immortal-MagicWX&label=访问量&color=ff6b6b&style=for-the-badge)](https://github.com/Pangu-Immortal/MagicWX)
-
-![萌萌计数器](https://moe-counter.glitch.me/get/@MagicWX?theme=rule34)
-
 </div>
 
 > The only people who have anything to fear from free software are those whose products are worth even less.
@@ -152,8 +154,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
-
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
