@@ -1,11 +1,12 @@
 
+
+# MagicWX（这里只是冰山一角）
+
 <div align="center">
 
 ![萌萌计数器](https://count.getloli.com/get/@MagicWX?theme=rule34)
 
 </div>
-
-# MagicWX（这里只是冰山一角）
 
 > The only people who have anything to fear from free software are those whose products are worth even less.
 >
