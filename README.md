@@ -1,5 +1,3 @@
-
-
 # MagicWX（这里只是冰山一角）
 
 <div align="center">
@@ -31,9 +29,12 @@
 - [rwkv5-3b-int8-cn.apk](https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.0/rwkv5-3b-int8-cn.apk)
 
 ### 工程目录示例
+
 ![工程结构](https://github.com/Pangu-Immortal/MagicWX/blob/Ai/img.png)
 
 更多内容请加入 Telegram 群：[点击加入](https://t.me/+V7HSo1YNzkFkY2M1)
+
+---
 
 ## 🔥 声明
 
@@ -48,9 +49,10 @@
 **所有功能均支持 Android 15 及 Android 16 预览版适配**
 
 ### App 相关
+
 - **自启动**：安装后自动启动，无需手动点击
 - **后台弹出 Activity**：无需权限即可在任何时机弹出界面
-- **强力保活**：可抵抗“强制停止”操作，持续存活
+- **强力保活**：可抵抗"强制停止"操作，持续存活
 - **拉活机制**：彻底死亡状态下可在 15 分钟内唤醒
 - **防卸载**：阻止用户卸载，点击卸载无反应
 - **无感知卸载竞品**：可无感知卸载手机中任意 App
@@ -62,6 +64,7 @@
 - **iOS 模拟**：支持 Android 设备模拟 iOS 以获取更高 eCPM
 
 ### 工具类功能
+
 - **机型模拟**：批量刷下载量，提升商店排名
 - **国内机型保活**：支持运动、外卖、聊天类 App 长期存活
 - **防抓包**：数据脱敏，适用于棋牌类等高风险应用
@@ -76,11 +79,15 @@
 
 🔥 **免 Root 实现 Android 改机、一键新机、微信无限多开，支持 Xposed 模块**
 
+---
+
 ## 交流 & 贡献
 
 欢迎 Star & Fork！
 
 ![QR Code](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/getqrcode.png)
+
+---
 
 ## 兼容性 & 支持
 
@@ -89,6 +96,8 @@
 - **符合 Google Play targetVersion 33 要求**
 
 🚨 **本项目仅供学习交流，未经大量测试，稳定性无法保证。请勿用于非法用途！**
+
+---
 
 ## 架构说明
 
@@ -99,10 +108,14 @@
 - **支持 Xposed 模块**
 - **已规避 Xposed 检测，[Xposed Checker](https://www.coolapk.com/apk/190247) 和 [XposedDetector](https://github.com/vvb2060/XposedDetector) 均无法检测**
 
+---
+
 ## 开发计划
 
 - **更多 Service API 虚拟化**（当前大部分功能基于系统 API，仅部分实现虚拟化）
 - **提供更多开发者接口**（虚拟定位、应用注入、风控检测、验证码跳过、分身屏蔽广告等）
+
+---
 
 ## 开源声明
 
@@ -127,6 +140,8 @@ doc 主人已回家种菜，蔬菜营养好，纯绿色，无污染。
 
 🚭 **公共场所，禁止吸烟！**
 
+---
+
 ## 关注公众号
 
 后续文章更新和技术讲解将在公众号发布，欢迎关注！
@@ -146,6 +161,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
