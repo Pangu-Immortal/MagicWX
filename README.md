@@ -18,6 +18,13 @@
 
 ![QR Code](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/getqrcode.png)
 
+## 应用截图
+
+<div align="center">
+  <img src="screenshots/home.png" width="300" alt="模型选择首页" />
+  <p>模型选择首页 — 支持 10 个主流端侧大模型一键下载与推理</p>
+</div>
+
 ## 使用指南
 
 1. **下载模型**：[MagicWX 模型](https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/model.onnx)
