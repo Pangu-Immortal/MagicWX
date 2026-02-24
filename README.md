@@ -16,7 +16,14 @@
 
 ---
 
-![QR Code](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/getqrcode.png)
+## 项目概览
+
+MagicWX 是一款 **Android 端侧大模型推理应用**，支持 **10 个主流 LLM** 一键下载与本地推理，无需服务器，完全离线运行。
+
+- 双推理架构：RWKV（RNN 状态机） + Transformer（KV-Cache）
+- 基于 ONNX Runtime 1.20.0，支持 FP32 / FP16 / INT8 / INT4 量化
+- 3 种聊天模板：ChatML、Llama3、Gemma
+- Jetpack Compose + Material3 现代 UI
 
 ## 应用截图
 
@@ -25,21 +32,66 @@
   <p>模型选择首页 — 支持 10 个主流端侧大模型一键下载与推理</p>
 </div>
 
-## 使用指南
+## 支持模型
 
-1. **下载模型**：[MagicWX 模型](https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/model.onnx)
-2. **放置模型**：将下载的模型文件复制到 `Assets` 文件夹，并确保文件结构与下图一致。
+| 模型 | 参数量 | 量化 | 架构 | 大小 | 聊天模板 |
+|------|--------|------|------|------|----------|
+| RWKV-7 World 0.4B | 0.4B | FP32 | RWKV | 1.5 GB | RWKV |
+| DeepSeek-R1 1.5B | 1.5B | INT4 | Transformer | 1.8 GB | ChatML |
+| Qwen3 0.6B | 0.6B | Q4F16 | Transformer | 300 MB | ChatML |
+| Gemma 3 1B | 1B | INT4 | Transformer | 1.5 GB | Gemma |
+| Phi-3 Mini 4K | 3.8B | INT4 | Transformer | 2.1 GB | ChatML |
+| Llama 3.2 1B | 1B | INT8 | Transformer | 1.1 GB | Llama3 |
+| SmolLM2 360M | 360M | Q4F16 | Transformer | 260 MB | ChatML |
+| TinyLlama 1.1B | 1.1B | INT4 | Transformer | 600 MB | ChatML |
+| StableLM 2 1.6B | 1.6B | INT4 | Transformer | 980 MB | ChatML |
+| MiniCPM 2B | 2B | INT4 | Transformer | 1.2 GB | ChatML |
 
-### 下载体验版 APP（RWKV-0.4B-World-CHNtuned-INT8）
+## 技术架构
 
-- [rwkv4-0.4b-int8.apk](https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/rwkv4-0.4b-int8.apk)
-- [rwkv5-3b-int8-cn.apk](https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.0/rwkv5-3b-int8-cn.apk)
+```
+com.qihao.open.rwkv/
+├── App.kt                    # Application 入口
+├── MainActivity.kt           # Jetpack Compose UI（6 个界面状态）
+├── model/
+│   ├── ITokenizer.kt         # 分词器接口
+│   ├── RWKVTokenizer.kt      # RWKV 专用分词器（GPT-2 BPE）
+│   ├── HFTokenizer.kt        # HuggingFace 分词器（3 种聊天模板）
+│   ├── RWKVModel.kt          # 双架构推理引擎（RWKV + Transformer）
+│   ├── ModelInfo.kt          # 10 个模型注册表
+│   └── ModelDownloader.kt    # 模型下载与存储管理
+├── viewmodel/
+│   └── MainViewModel.kt      # MVVM 状态管理（Kotlin Flow）
+└── ui/theme/
+    └── Theme.kt              # Material3 主题
+```
 
-### 工程目录示例
+**推理流程**：选择模型 → 自动下载（含 tokenizer.json） → ONNX Runtime 加载 → 自动识别架构 → Prefill + Decode → Top-P 采样输出
 
-![工程结构](https://github.com/Pangu-Immortal/MagicWX/blob/Ai/img.png)
+## 快速开始
 
-更多内容请加入 Telegram 群：[点击加入](https://t.me/+V7HSo1YNzkFkY2M1)
+```bash
+# 1. 克隆项目
+git clone https://github.com/Pangu-Immortal/MagicWX.git
+
+# 2. 用 Android Studio 打开项目
+
+# 3. 编译运行
+./gradlew assembleDebug
+
+# 4. 安装到设备后，选择任意模型 → 点击下载 → 开始聊天
+```
+
+## 兼容性
+
+| 项目 | 版本 |
+|------|------|
+| Android 版本 | 7.0 - 15（API 24 - 35） |
+| Kotlin | 2.1.0 |
+| Compose BOM | 2024.12.01 |
+| ONNX Runtime | 1.20.0 |
+| Gradle | 8.7.3 (AGP) |
+| JVM | 17 |
 
 ---
 
@@ -88,86 +140,46 @@
 
 ---
 
-## 交流 & 贡献
+## 开源依赖
 
-欢迎 Star & Fork！
+| 库 | 版本 | 用途 |
+|----|------|------|
+| [ONNX Runtime Android](https://github.com/microsoft/onnxruntime) | 1.20.0 | 端侧模型推理引擎 |
+| [Jetpack Compose](https://developer.android.com/jetpack/compose) | 2024.12.01 BOM | 声明式 UI 框架 |
+| [Material3](https://m3.material.io/) | via Compose BOM | Material Design 3 组件 |
+| [Gson](https://github.com/google/gson) | 2.11.0 | JSON 序列化 |
+| [AndroidX Lifecycle](https://developer.android.com/jetpack/androidx/releases/lifecycle) | 2.8.7 | ViewModel + 协程生命周期 |
+| [AndroidX Activity Compose](https://developer.android.com/jetpack/androidx/releases/activity) | 1.9.3 | Activity + Compose 集成 |
 
-![QR Code](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/getqrcode.png)
+## 交流
 
----
-
-## 兼容性 & 支持
-
-- **暂不支持 Android 4.x**
-- **已兼容 Android 5.0 - 16.0，并持续跟进新系统**
-- **符合 Google Play targetVersion 33 要求**
-
-🚨 **本项目仅供学习交流，未经大量测试，稳定性无法保证。请勿用于非法用途！**
-
----
-
-## 架构说明
-
-本项目区分 32 位和 64 位，目前包含两个独立 App。如果 Demo 中找不到已安装的 App，请尝试编译适配的架构版本。
-
-### Xposed 相关
-
-- **支持 Xposed 模块**
-- **已规避 Xposed 检测，[Xposed Checker](https://www.coolapk.com/apk/190247) 和 [XposedDetector](https://github.com/vvb2060/XposedDetector) 均无法检测**
-
----
-
-## 开发计划
-
-- **更多 Service API 虚拟化**（当前大部分功能基于系统 API，仅部分实现虚拟化）
-- **提供更多开发者接口**（虚拟定位、应用注入、风控检测、验证码跳过、分身屏蔽广告等）
-
----
-
-## 开源声明
-
-本项目为免费开源项目，日常维护耗费大量精力，仅出于个人兴趣交流。
-
-```nginx
-提示：
-doc 主人已回家种菜，蔬菜营养好，纯绿色，无污染。
-
-说明：
-本项目为非盈利性开发，仅供个人学习交流。
-禁止用于任何商业盈利用途。
-```
-
----
-
-## 公益倡议
-
-🌍 **抗击疫情，人人有责！**
-
-💡 **关爱自己，注意个人卫生！**
-
-🚭 **公共场所，禁止吸烟！**
-
----
-
-## 关注公众号
-
-后续文章更新和技术讲解将在公众号发布，欢迎关注！
+更多内容请加入 Telegram 群：[点击加入](https://t.me/+V7HSo1YNzkFkY2M1)
 
 ![QR Code](https://github.com/Pangu-Immortal/Pangu-Immortal/blob/main/getqrcode.png)
 
----
+## Star 趋势
 
-## ⭐ Star 趋势
+<a href="https://star-history.com/#Pangu-Immortal/MagicWX&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Pangu-Immortal/MagicWX&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Pangu-Immortal/MagicWX&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Pangu-Immortal/MagicWX&type=Date" />
+  </picture>
+</a>
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+欢迎 Star & Fork！Contributions are welcome!
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
+
+## 开源声明
+
+本项目为免费开源项目，仅供个人学习交流，禁止用于任何商业盈利用途。
 
 ## License
 
