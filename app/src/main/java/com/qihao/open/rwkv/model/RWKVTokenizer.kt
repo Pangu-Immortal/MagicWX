@@ -14,12 +14,16 @@ import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
-class RWKVTokenizer(context: Context) : ITokenizer {
+class RWKVTokenizer internal constructor(vocabJson: String) : ITokenizer {
 
     companion object {
         private const val TAG = "RWKVTokenizer"
         private const val VOCAB_PATH = "model/vocab.json" // assets 中的词汇表路径
     }
+
+    constructor(context: Context) : this(
+        context.assets.open(VOCAB_PATH).bufferedReader().use { it.readText() }
+    )
 
     // token ID → 文本映射
     private val decoder = mutableMapOf<Int, String>()
@@ -35,10 +39,8 @@ class RWKVTokenizer(context: Context) : ITokenizer {
     override val vocabSize: Int get() = decoder.size
 
     init {
-        // 从 assets 加载词汇表
-        val json = context.assets.open(VOCAB_PATH).bufferedReader().use { it.readText() }
         val type = object : TypeToken<Map<String, String>>() {}.type
-        val vocabMap: Map<String, String> = Gson().fromJson(json, type)
+        val vocabMap: Map<String, String> = Gson().fromJson(vocabJson, type)
 
         // 构建编码和解码映射
         for ((idStr, text) in vocabMap) {

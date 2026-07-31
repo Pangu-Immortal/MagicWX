@@ -267,7 +267,7 @@ class RWKVModel(private val tokenizer: ITokenizer) {
             if (!coroutineContext.isActive) break
 
             nextToken = if (promptTokens.isNotEmpty()) {
-                promptTokens.removeFirst()               // Prompt 处理阶段
+                promptTokens.removeAt(0)                 // Prompt 处理阶段（兼容 API 24）
             } else {
                 nextToken                                 // 生成阶段
             }
@@ -285,11 +285,18 @@ class RWKVModel(private val tokenizer: ITokenizer) {
             val result = sess.run(inputMap)
 
             // 提取 logits
-            @Suppress("UNCHECKED_CAST")
             val logitsRaw = result.get(0).value
             val logits: FloatArray = when (logitsRaw) {
                 is FloatArray -> logitsRaw
-                is Array<*> -> (logitsRaw as Array<FloatArray>)[0]
+                is Array<*> -> {
+                    val firstRow = logitsRaw.firstOrNull()
+                    if (firstRow is FloatArray) {
+                        firstRow                            // 常见输出 shape: [batch, vocab]
+                    } else {
+                        Log.e(TAG, "未知 logits 数组结构: ${firstRow?.javaClass}")
+                        break
+                    }
+                }
                 else -> { Log.e(TAG, "未知 logits 类型: ${logitsRaw?.javaClass}"); break }
             }
 
@@ -464,14 +471,14 @@ class RWKVModel(private val tokenizer: ITokenizer) {
         val logitsRaw = result.get(0).value
         return when (logitsRaw) {
             is Array<*> -> {
-                @Suppress("UNCHECKED_CAST")
-                val arr3d = logitsRaw as? Array<Array<FloatArray>>
-                if (arr3d != null) {
-                    arr3d[0][seqLen - 1]                 // [batch=0][最后一个 token][vocab]
-                } else {
-                    @Suppress("UNCHECKED_CAST")
-                    val arr2d = logitsRaw as? Array<FloatArray>
-                    arr2d?.get(seqLen - 1) ?: FloatArray(0)
+                val firstBatch = logitsRaw.firstOrNull()
+                when (firstBatch) {
+                    is Array<*> -> firstBatch.getOrNull(seqLen - 1) as? FloatArray ?: FloatArray(0)
+                    is FloatArray -> logitsRaw.getOrNull(seqLen - 1) as? FloatArray ?: firstBatch
+                    else -> {
+                        Log.e(TAG, "未知 Transformer logits 数组结构: ${firstBatch?.javaClass}")
+                        FloatArray(0)
+                    }
                 }
             }
             is FloatArray -> logitsRaw                   // 直接返回（单 token 情况）

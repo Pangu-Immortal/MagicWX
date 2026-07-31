@@ -10,13 +10,13 @@
  * - migrateOldModel(): 迁移旧版单模型目录到新多模型目录结构
  *
  * 目录结构：
- *   context.filesDir/models/{modelId}/{originalFilename}
- *   context.filesDir/models/{modelId}/{originalFilename}_data （部分模型需要）
+ *   filesDir/models/{modelId}/{originalFilename}
+ *   filesDir/models/{modelId}/{originalFilename}_data （部分模型需要）
  *
  * 关键改进：
  * - 保留模型文件原始名称（如 model_q4.onnx），避免 ONNX 外部数据引用断裂
  * - 自动检测并下载伴随的 _data 数据文件
- * - 网络异常自动重试（最多3次，指数退避）
+ * - 网络异常自动重试（最多5次，指数退避）
  * - 增大读写缓冲区到 64KB 提升下载速度
  */
 package com.qihao.open.rwkv.model
@@ -30,7 +30,10 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
-class ModelDownloader(private val context: Context) {
+class ModelDownloader private constructor(
+    private val filesDir: File,                           // 应用私有文件根目录
+    private val enableMigration: Boolean                  // 是否执行旧版目录迁移
+) {
 
     companion object {
         private const val TAG = "ModelDownloader"
@@ -43,11 +46,23 @@ class ModelDownloader(private val context: Context) {
         private const val RETRY_DELAY_MS = 2000L              // 重试间隔基数（毫秒）
     }
 
+    constructor(context: Context) : this(context.filesDir, enableMigration = true)
+
+    internal constructor(filesDir: File) : this(filesDir, enableMigration = false)
+
+    /** 模型包加载前的完整性检查结果 */
+    data class ModelReadiness(
+        val isReady: Boolean,                             // 是否允许进入模型加载
+        val reason: String,                               // 就绪或失败原因
+        val modelFile: File? = null,                      // 主 ONNX 文件
+        val tokenizerFile: File? = null                   // Transformer 分词器文件
+    )
+
     // 多模型根目录
-    private val modelsRoot: File get() = File(context.filesDir, MODELS_DIR)
+    private val modelsRoot: File get() = File(filesDir, MODELS_DIR)
 
     init {
-        migrateOldModel() // 启动时检查并迁移旧版模型
+        if (enableMigration) migrateOldModel()            // 启动时检查并迁移旧版模型
     }
 
     /**
@@ -79,9 +94,29 @@ class ModelDownloader(private val context: Context) {
     private fun findOnnxFile(modelId: String): File? {
         val dir = getModelDir(modelId)
         if (!dir.exists()) return null
-        return dir.listFiles()?.firstOrNull {                 // 查找第一个 .onnx 文件
-            it.extension == "onnx" && !it.name.contains(TEMP_SUFFIX)
-        }
+        return dir.listFiles()
+            ?.sortedBy { it.name }                            // 固定顺序，避免多文件时结果漂移
+            ?.firstOrNull { isReadyOnnxFile(it) }              // 只接受非空正式 ONNX 文件
+    }
+
+    /**
+     * 判断文件是否为可加载的主 ONNX 文件
+     * @param file 待检查文件
+     */
+    private fun isReadyOnnxFile(file: File): Boolean {
+        return file.isFile &&                                  // 必须是普通文件
+            file.extension == "onnx" &&                        // 必须是 ONNX 主文件
+            !file.name.endsWith(TEMP_SUFFIX) &&                // 不能是临时下载文件
+            file.length() > 0L                                 // 零字节文件视为损坏
+    }
+
+    /**
+     * 判断 tokenizer.json 是否存在且非空
+     * @param modelId 模型唯一标识
+     */
+    private fun hasReadyTokenizer(modelId: String): Boolean {
+        val file = File(getModelDir(modelId), "tokenizer.json")
+        return file.isFile && file.length() > 0L               // Transformer 必须有有效分词器文件
     }
 
     /**
@@ -101,14 +136,51 @@ class ModelDownloader(private val context: Context) {
      */
     fun getTokenizerPath(modelId: String): String? {
         val file = File(getModelDir(modelId), "tokenizer.json")
-        return if (file.exists()) file.absolutePath else null
+        return if (file.isFile && file.length() > 0L) file.absolutePath else null
     }
 
     /**
      * 检查指定模型是否已下载完成
      * @param modelId 模型唯一标识
      */
-    fun isModelReady(modelId: String): Boolean = findOnnxFile(modelId) != null
+    fun isModelReady(modelId: String): Boolean {
+        val modelInfo = ModelRegistry.findById(modelId)
+        return if (modelInfo != null) {
+            isModelReady(modelInfo)                            // 已登记模型按架构校验完整资产
+        } else {
+            findOnnxFile(modelId) != null                      // 未登记目录仅做兼容性 ONNX 检查
+        }
+    }
+
+    /**
+     * 检查指定模型包是否满足加载前置条件
+     * @param modelInfo 模型元信息
+     */
+    fun isModelReady(modelInfo: ModelInfo): Boolean {
+        return getModelReadiness(modelInfo).isReady            // 统一走结构化完整性门禁
+    }
+
+    /**
+     * 获取指定模型包的完整性检查结果
+     * @param modelInfo 模型元信息
+     */
+    fun getModelReadiness(modelInfo: ModelInfo): ModelReadiness {
+        val modelFile = findOnnxFile(modelInfo.id)
+        if (modelFile == null) {
+            return ModelReadiness(false, "缺少完整的 ONNX 模型文件") // 主模型不存在时不能进入 READY
+        }
+
+        if (modelInfo.arch == ModelArch.TRANSFORMER) {
+            val tokenizerPath = getTokenizerPath(modelInfo.id)
+            if (tokenizerPath == null) {
+                Log.w(TAG, "Transformer 模型缺少 tokenizer.json: ${modelInfo.id}")
+                return ModelReadiness(false, "Transformer 模型缺少 tokenizer.json", modelFile)
+            }
+            return ModelReadiness(true, "模型文件和 tokenizer.json 已就绪", modelFile, File(tokenizerPath))
+        }
+
+        return ModelReadiness(true, "模型文件已就绪", modelFile)
+    }
 
     /**
      * 获取所有已下载模型的 ID 列表
@@ -117,7 +189,7 @@ class ModelDownloader(private val context: Context) {
         val root = modelsRoot
         if (!root.exists()) return emptySet()
         return root.listFiles()
-            ?.filter { it.isDirectory && findOnnxFile(it.name) != null } // 有 .onnx 文件的目录
+            ?.filter { it.isDirectory && isModelReady(it.name) }         // 只列出完整可加载模型包
             ?.map { it.name }
             ?.toSet()
             ?: emptySet()
@@ -139,7 +211,7 @@ class ModelDownloader(private val context: Context) {
      * 旧路径: filesDir/model/model.onnx → 新路径: filesDir/models/rwkv7-world-0.4b/model.onnx
      */
     private fun migrateOldModel() {
-        val oldDir = File(context.filesDir, OLD_MODEL_DIR)     // 旧目录
+        val oldDir = File(filesDir, OLD_MODEL_DIR)             // 旧目录
         val oldFile = File(oldDir, OLD_MODEL_FILE)             // 旧模型文件
         if (!oldFile.exists()) return                          // 无旧文件则跳过
 
@@ -189,7 +261,7 @@ class ModelDownloader(private val context: Context) {
             val targetFile = File(modelDir, filename)
 
             // 已经下载完成则跳过
-            if (findOnnxFile(modelInfo.id) != null) {
+            if (isModelReady(modelInfo)) {
                 Log.d(TAG, "模型已存在: ${modelInfo.id}")
                 val existingFile = findOnnxFile(modelInfo.id)!!
                 onProgress(existingFile.length(), existingFile.length(), 100)
@@ -242,19 +314,25 @@ class ModelDownloader(private val context: Context) {
             // ---- 第三阶段：下载 tokenizer.json（Transformer 模型需要） ----
             if (modelInfo.tokenizerUrl != null) {
                 val tokenizerFile = File(modelDir, "tokenizer.json")
-                if (!tokenizerFile.exists()) {
+                if (!hasReadyTokenizer(modelInfo.id)) {
                     Log.d(TAG, "下载分词器: tokenizer.json")
                     val tokenizerSuccess = downloadSingleFile(
                         url = modelInfo.tokenizerUrl,
                         targetFile = tokenizerFile,
-                        optional = true                  // 可选，失败不阻塞模型使用
+                        optional = false                 // Transformer 分词器是必需资产
                     )
                     if (tokenizerSuccess) {
                         Log.d(TAG, "分词器下载完成: tokenizer.json (${tokenizerFile.length() / 1024}KB)")
                     } else {
-                        Log.w(TAG, "分词器下载失败，模型仍可使用但分词可能不准确")
+                        Log.e(TAG, "分词器下载失败，模型包不完整: ${modelInfo.id}")
+                        return@withContext false         // 禁止使用错误 tokenizer 降级
                     }
                 }
+            }
+
+            if (!isModelReady(modelInfo)) {
+                Log.e(TAG, "模型包完整性检查失败: ${modelInfo.id}")
+                return@withContext false                 // 最终 ready 门禁防止半包进入加载
             }
 
             Log.d(TAG, "模型下载完成: ${modelInfo.id} → ${targetFile.absolutePath}")
@@ -279,7 +357,10 @@ class ModelDownloader(private val context: Context) {
         optional: Boolean = false,
         onProgress: ((downloaded: Long, total: Long, percent: Int) -> Unit)? = null
     ): Boolean {
-        if (targetFile.exists()) return true                   // 已存在直接返回
+        if (targetFile.isFile && targetFile.length() > 0L) return true // 已存在有效文件直接返回
+        if (targetFile.exists() && targetFile.length() == 0L) {
+            targetFile.delete()                                // 删除零字节坏文件后重新下载
+        }
 
         val tempFile = File(targetFile.parent, "${targetFile.name}$TEMP_SUFFIX")
 

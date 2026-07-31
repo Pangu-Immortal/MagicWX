@@ -116,7 +116,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _selectedModel.value = modelInfo
         Log.d(TAG, "选中模型: ${modelInfo.id} (${modelInfo.name})")
 
-        if (downloader.isModelReady(modelInfo.id)) {
+        if (downloader.isModelReady(modelInfo)) {
             // 已下载，直接加载
             loadModel(modelInfo)
         } else {
@@ -202,9 +202,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Log.d(TAG, "加载 HF 分词器: $tokenizerPath")
                 HFTokenizer(tokenizerPath, modelInfo.chatTemplate)
             } else {
-                // 回退：tokenizer.json 未下载，使用 RWKV 分词器（输出可能不准确）
-                Log.w(TAG, "tokenizer.json 不存在，回退到 RWKV 分词器")
-                RWKVTokenizer(getApplication())
+                // Transformer tokenizer 是必需资产，缺失时必须阻止错误加载
+                val message = "Transformer 模型缺少 tokenizer.json: ${modelInfo.id}"
+                Log.e(TAG, message)
+                throw IllegalStateException(message)
             }
         }
     }

@@ -1,20 +1,19 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
     id("kotlin-parcelize")
 }
 
 android {
     namespace = "com.qihao.open.rwkv"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.qihao.open.rwkv"
         minSdk = 24
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        targetSdk = 37
+        versionCode = 2
+        versionName = "1.1.0"
     }
 
     buildTypes {
@@ -37,13 +36,21 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         buildConfig = true
         compose = true
+    }
+
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
@@ -69,4 +76,7 @@ dependencies {
 
     // JSON 序列化
     implementation(libs.gson)
+
+    // JVM 单元测试
+    testImplementation(libs.junit)
 }
