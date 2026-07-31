@@ -11,6 +11,7 @@ package com.qihao.open.rwkv.model
 
 /** 模型架构类型 */
 enum class ModelArch {
+    BUILTIN,     // 内置体验模型（无需下载，用于首次打开快速体验）
     RWKV,        // RWKV 架构（RNN 状态传递，完全支持）
     TRANSFORMER  // Transformer 架构（KV-cache，实验性支持）
 }
@@ -47,7 +48,7 @@ data class ModelInfo(
  * 模型注册表 - 包含 10 个可在手机运行的 ONNX 模型
  *
  * 支持等级说明：
- * - 完全支持（isFullySupported=true）：RWKV 模型，使用内置分词器和推理引擎
+ * - 完全支持（isFullySupported=true）：内置体验模型或已验证 RWKV 路径
  * - 实验性（isFullySupported=false）：Transformer 模型，使用 HuggingFace 分词器和 KV-cache 推理
  */
 object ModelRegistry {
@@ -56,6 +57,7 @@ object ModelRegistry {
      * 所有可用模型列表（每个厂家仅保留 1 个模型）
      *
      * 厂家清单：
+     * 0. MagicWX - 内置体验模型
      * 1. RWKV Foundation - RWKV-7 World 0.4B
      * 2. 深度求索 - DeepSeek-R1 1.5B
      * 3. 阿里巴巴 - Qwen3 0.6B
@@ -68,6 +70,19 @@ object ModelRegistry {
      * 10. 面壁智能 - MiniCPM 2B
      */
     val models: List<ModelInfo> = listOf(
+        // 0. MagicWX 内置体验模型（无需下载权重，确保首次打开可立即对话）
+        ModelInfo(
+            id = "magicwx-builtin-demo",
+            name = "MagicWX 内置体验模型",
+            description = "无需下载，首次打开即可体验本地对话流程",
+            arch = ModelArch.BUILTIN,
+            paramSize = "内置",
+            quantization = "N/A",
+            downloadUrl = "",
+            fileSizeMB = 0,
+            isFullySupported = true,
+            tokenizerUrl = null
+        ),
         // 1. RWKV Foundation（完全支持，使用内置 vocab.json 分词器）
         ModelInfo(
             id = "rwkv7-world-0.4b",

@@ -3,7 +3,7 @@
  *
  * 功能：
  * - 验证模型 ID 唯一
- * - 验证默认模型为完全支持的 RWKV 模型
+ * - 验证默认模型为无需下载的内置体验模型
  * - 验证 Transformer 模型都声明 tokenizer 下载地址
  */
 package com.qihao.open.rwkv.model
@@ -23,10 +23,10 @@ class ModelRegistryTest {
     }
 
     @Test
-    fun defaultModelIsFullySupportedRwkv() {
+    fun defaultModelIsFullySupportedBuiltin() {
         val defaultModel = ModelRegistry.getDefault()
 
-        assertEquals(ModelArch.RWKV, defaultModel.arch)
+        assertEquals(ModelArch.BUILTIN, defaultModel.arch)
         assertTrue(defaultModel.isFullySupported)
     }
 

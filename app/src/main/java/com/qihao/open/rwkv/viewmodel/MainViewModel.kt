@@ -14,8 +14,10 @@ package com.qihao.open.rwkv.viewmodel
 
 import android.app.Application
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.qihao.open.rwkv.model.BuiltinExperienceModel
 import com.qihao.open.rwkv.model.HFTokenizer
 import com.qihao.open.rwkv.model.ITokenizer
 import com.qihao.open.rwkv.model.ModelArch
@@ -24,6 +26,10 @@ import com.qihao.open.rwkv.model.ModelInfo
 import com.qihao.open.rwkv.model.ModelRegistry
 import com.qihao.open.rwkv.model.RWKVModel
 import com.qihao.open.rwkv.model.RWKVTokenizer
+import com.qihao.open.rwkv.model.TextGenerationEngine
+import com.qihao.open.rwkv.service.ModelDownloadEventType
+import com.qihao.open.rwkv.service.ModelDownloadEvents
+import com.qihao.open.rwkv.service.ModelDownloadService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,7 +63,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // 分词器和模型（懒初始化）
     private var tokenizer: ITokenizer? = null            // 分词器接口（RWKV 或 HF）
-    private var model: RWKVModel? = null
+    private var model: TextGenerationEngine? = null
     private var generateJob: Job? = null // 当前生成任务
 
     // === UI 状态 ===
@@ -86,6 +92,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _downloadInfo = MutableStateFlow("")
     val downloadInfo: StateFlow<String> = _downloadInfo.asStateFlow()
 
+    // 首页按模型 ID 展示的后台下载进度
+    private val _downloadProgressByModelId = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val downloadProgressByModelId: StateFlow<Map<String, Int>> = _downloadProgressByModelId.asStateFlow()
+
     // 聊天消息列表
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
@@ -100,6 +110,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         refreshDownloadedModels() // 启动时刷新已下载列表
+        observeDownloadEvents()   // 监听前台服务下载进度
     }
 
     /** 刷新已下载模型列表 */
@@ -129,26 +140,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun downloadModel() {
         val modelInfo = _selectedModel.value ?: return                 // 未选中模型
         if (_appState.value == AppState.DOWNLOADING) return            // 防止重复下载
+        if (modelInfo.arch == ModelArch.BUILTIN) {
+            loadModel(modelInfo)                                       // 内置模型无需下载
+            return
+        }
 
         _appState.value = AppState.DOWNLOADING
         _downloadProgress.value = 0
         _downloadInfo.value = "准备下载..."
+        updateModelDownloadProgress(modelInfo.id, 0)                  // 首页立即显示该模型正在下载
 
-        viewModelScope.launch {
-            val success = downloader.downloadModel(modelInfo) { downloaded, total, percent ->
-                _downloadProgress.value = percent
-                _downloadInfo.value = formatSize(downloaded, total)
-            }
-
-            if (success) {
-                Log.d(TAG, "下载完成: ${modelInfo.id}，开始加载模型")
-                refreshDownloadedModels()                              // 刷新已下载列表
-                loadModel(modelInfo)                                   // 加载模型
-            } else {
-                _appState.value = AppState.ERROR
-                _errorMessage.value = "模型下载失败，请检查网络后重试"
-            }
-        }
+        val intent = ModelDownloadService.createStartIntent(getApplication(), modelInfo.id)
+        ContextCompat.startForegroundService(getApplication(), intent)  // 用户点击触发前台服务下载
+        Log.d(TAG, "已启动后台下载服务: ${modelInfo.id}")
     }
 
     /**
@@ -167,14 +171,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _loadedModelId.value = null
 
                 // 根据模型架构选择分词器
-                tokenizer = createTokenizer(modelInfo)
-                Log.d(TAG, "分词器初始化完成: ${tokenizer!!::class.simpleName}")
+                if (modelInfo.arch == ModelArch.BUILTIN) {
+                    val builtin = BuiltinExperienceModel()
+                    builtin.load()                                     // 内置体验模型不需要 ONNX 权重
+                    model = builtin
+                    Log.d(TAG, "内置体验模型初始化完成")
+                } else {
+                    tokenizer = createTokenizer(modelInfo)
+                    Log.d(TAG, "分词器初始化完成: ${tokenizer!!::class.simpleName}")
 
-                // 初始化并加载模型
-                val rwkv = RWKVModel(tokenizer!!)
-                val modelPath = downloader.getModelPath(modelInfo.id)
-                rwkv.loadModel(modelPath)
-                model = rwkv
+                    // 初始化并加载 ONNX 模型
+                    val rwkv = RWKVModel(tokenizer!!)
+                    val modelPath = downloader.getModelPath(modelInfo.id)
+                    rwkv.loadModel(modelPath)
+                    model = rwkv
+                }
                 _loadedModelId.value = modelInfo.id
 
                 _appState.value = AppState.READY
@@ -311,6 +322,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * @param modelId 模型唯一标识
      */
     fun deleteModel(modelId: String) {
+        val modelInfo = ModelRegistry.findById(modelId)
+        if (modelInfo?.arch == ModelArch.BUILTIN) {
+            Log.d(TAG, "内置体验模型不可删除: $modelId")
+            refreshDownloadedModels()
+            return
+        }
+
         // 如果正在使用该模型，先切换
         if (_loadedModelId.value == modelId) {
             switchModel()
@@ -326,6 +344,64 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** 返回模型选择界面 */
     fun goToModelSelect() {
         _appState.value = AppState.MODEL_SELECT
+    }
+
+    /** 监听前台服务下载事件，并同步 UI 状态 */
+    private fun observeDownloadEvents() {
+        viewModelScope.launch {
+            ModelDownloadEvents.events.collect { event ->
+                val selectedId = _selectedModel.value?.id
+                when (event.type) {
+                    ModelDownloadEventType.STARTED -> {
+                        updateModelDownloadProgress(event.modelId, 0)  // 首页显示下载中标识
+                        if (event.modelId == selectedId) {
+                            _downloadProgress.value = 0
+                            _downloadInfo.value = event.message.ifEmpty { "准备下载..." }
+                        }
+                    }
+                    ModelDownloadEventType.PROGRESS -> {
+                        updateModelDownloadProgress(event.modelId, event.percent)
+                        if (event.modelId == selectedId) {
+                            _downloadProgress.value = event.percent
+                            _downloadInfo.value = event.message.ifEmpty {
+                                formatSize(event.downloadedBytes, event.totalBytes)
+                            }
+                        }
+                    }
+                    ModelDownloadEventType.COMPLETED -> {
+                        removeModelDownloadProgress(event.modelId)
+                        refreshDownloadedModels()                       // 服务完成后刷新本地包状态
+                        if (event.modelId == selectedId && _appState.value == AppState.DOWNLOADING) {
+                            Log.d(TAG, "下载完成且用户仍在下载页，开始加载模型: ${event.modelId}")
+                            loadModel(_selectedModel.value ?: return@collect)
+                        } else {
+                            Log.d(TAG, "下载完成，保持当前界面: ${event.modelId}")
+                        }
+                    }
+                    ModelDownloadEventType.FAILED -> {
+                        removeModelDownloadProgress(event.modelId)
+                        if (event.modelId == selectedId) {
+                            _appState.value = AppState.ERROR
+                            _errorMessage.value = event.message.ifEmpty { "模型下载失败，请检查网络后重试" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** 更新首页指定模型的下载进度 */
+    private fun updateModelDownloadProgress(modelId: String, percent: Int) {
+        val next = _downloadProgressByModelId.value.toMutableMap()
+        next[modelId] = percent.coerceIn(0, 100)
+        _downloadProgressByModelId.value = next
+    }
+
+    /** 移除首页指定模型的下载中状态 */
+    private fun removeModelDownloadProgress(modelId: String) {
+        val next = _downloadProgressByModelId.value.toMutableMap()
+        next.remove(modelId)
+        _downloadProgressByModelId.value = next
     }
 
     /** 格式化文件大小显示 */

@@ -7,13 +7,19 @@ Keywords: Android local LLM, Android 17 AI app, Jetpack Compose AI chat, ONNX Ru
 ## Current Status
 
 - Android app prototype: available.
-- Latest prototype release: `v1.1.0`.
+- Latest prototype release: `v1.1.1`.
 - Android target: API 37 / Android 17.
 - Verified production-ready models: none yet.
-- Fully implemented path in code: RWKV-style local text generation prototype.
+- Verified first-run path: built-in MagicWX experience model, no external download required.
+- ONNX path in code: RWKV-style local text generation prototype plus experimental Transformer support.
+- Background downloads: user-started foreground service with persistent progress notification and model-card progress state.
 - Transformer entries: experimental candidates that require model-specific tokenizer, input/output, dry-run, and golden-output validation before public support claims.
 
 The repository intentionally distinguishes registered model candidates from verified GA support. Do not describe a model as supported until it has a complete package manifest, required assets, successful load, fixed-input dry-run, and device verification evidence.
+
+## App Runtime Screenshot
+
+<img src="screenshots/home.png" width="320" alt="MagicWX Android 17 model selection screen with built-in experience model" />
 
 ## Project Structure
 
@@ -25,9 +31,14 @@ com.qihao.open.rwkv/
 │   ├── ITokenizer.kt         # Tokenizer interface
 │   ├── RWKVTokenizer.kt      # RWKV vocabulary tokenizer
 │   ├── HFTokenizer.kt        # Experimental tokenizer.json reader
+│   ├── BuiltinExperienceModel.kt # Built-in no-download demo engine
+│   ├── TextGenerationEngine.kt # Shared generation interface
 │   ├── RWKVModel.kt          # ONNX Runtime inference wrapper
 │   ├── ModelInfo.kt          # Registered model metadata
 │   └── ModelDownloader.kt    # Download and local package checks
+├── service/
+│   ├── ModelDownloadService.kt # Foreground model download service
+│   └── ModelDownloadEvents.kt  # In-process download progress events
 ├── viewmodel/
 │   └── MainViewModel.kt      # MVVM state and user actions
 └── ui/theme/
@@ -36,22 +47,27 @@ com.qihao.open.rwkv/
 
 Human-facing product, design, and development documents live under `doc/`. AI-facing change plans live under `openspec/`.
 
-## Registered Prototype Candidates
+## Registered Models
 
-The app currently registers 10 candidate model entries for UI and download-flow development. Only `RWKV-7 World 0.4B` is marked as the current preferred prototype path. Transformer entries remain experimental until each package passes tokenizer, ONNX input/output, dry-run, and device tests.
+The app registers one built-in experience model for first-run use and 10 external ONNX candidates for download-flow and inference validation. The built-in model is a deterministic local experience engine, not a bundled large model weight. Transformer entries remain experimental until each package passes tokenizer, ONNX input/output, dry-run, and device tests.
 
-| Model | Params | Quantization | Architecture | Status |
-|---|---:|---|---|---|
-| RWKV-7 World 0.4B | 0.4B | FP32 | RWKV | Prototype path |
-| DeepSeek-R1 1.5B | 1.5B | INT4 | Transformer | Experimental |
-| Qwen3 0.6B | 0.6B | Q4F16 | Transformer | Experimental |
-| Gemma 3 1B | 1B | INT4 | Transformer | Experimental |
-| Phi-3 Mini 4K | 3.8B | INT4 | Transformer | Experimental |
-| Llama 3.2 1B | 1B | INT8 | Transformer | Experimental |
-| SmolLM2 360M | 360M | Q4F16 | Transformer | Experimental |
-| TinyLlama 1.1B | 1.1B | INT4 | Transformer | Experimental |
-| StableLM 2 1.6B | 1.6B | INT4 | Transformer | Experimental |
-| MiniCPM 2B | 2B | INT4 | Transformer | Experimental |
+| Model | Architecture | Download status | Runtime status |
+|---|---|---|---|
+| MagicWX built-in experience | Built-in | Bundled in code | Verified on device for first-run chat |
+| RWKV-7 World 0.4B | RWKV | Endpoint reachable | Prototype path, needs full download/load test |
+| DeepSeek-R1 1.5B | Transformer | Model/tokenizer endpoints reachable | Experimental |
+| Qwen3 0.6B | Transformer | Model/tokenizer endpoints reachable | Experimental; background download UI verified |
+| Gemma 3 1B | Transformer | Model/tokenizer and `_data` endpoints reachable | Experimental; requires external data package |
+| Phi-3 Mini 4K | Transformer | Model/tokenizer and `_data` endpoints reachable | Experimental; requires external data package |
+| Llama 3.2 1B | Transformer | Model/tokenizer endpoints reachable | Experimental |
+| SmolLM2 360M | Transformer | Model/tokenizer endpoints reachable | Experimental |
+| TinyLlama 1.1B | Transformer | Endpoint returned HTTP 401 in validation | Blocked until URL is replaced |
+| StableLM 2 1.6B | Transformer | Endpoint returned HTTP 401 in validation | Blocked until URL is replaced |
+| MiniCPM 2B | Transformer | Endpoint returned HTTP 401 in validation | Blocked until URL is replaced |
+
+## Download Behavior
+
+External model downloads run in a user-started `dataSync` foreground service. Users can tap “后台下载，返回模型选择” to leave the download page; the active model card shows “下载中 xx%” and a progress bar while the service continues. The downloader keeps `.downloading` temporary files for resume, validates short reads before renaming, and requires tokenizer and `_data` assets when the model package needs them.
 
 ## Android 17 Notes
 

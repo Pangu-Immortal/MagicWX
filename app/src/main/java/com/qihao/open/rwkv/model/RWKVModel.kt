@@ -31,7 +31,7 @@ import java.util.Arrays
 import kotlin.coroutines.coroutineContext
 import kotlin.math.exp
 
-class RWKVModel(private val tokenizer: ITokenizer) {
+class RWKVModel(private val tokenizer: ITokenizer) : TextGenerationEngine {
 
     companion object {
         private const val TAG = "RWKVModel"
@@ -59,7 +59,7 @@ class RWKVModel(private val tokenizer: ITokenizer) {
     private var pastSeqLen = 0                           // 已处理的序列长度
     private var previousResult: OrtSession.Result? = null // 上一次推理结果（持有 KV-cache 内存）
 
-    val isLoaded: Boolean get() = session != null
+    override val isLoaded: Boolean get() = session != null
 
     // ==================== 加载模型 ====================
 
@@ -158,7 +158,7 @@ class RWKVModel(private val tokenizer: ITokenizer) {
     // ==================== 状态管理 ====================
 
     /** 重置模型状态（根据架构类型） */
-    fun resetState() {
+    override fun resetState() {
         if (isTransformer) {
             resetKvCache()
         } else {
@@ -231,11 +231,11 @@ class RWKVModel(private val tokenizer: ITokenizer) {
      * @param topP 核采样阈值
      * @param onToken 每生成一个 token 的回调
      */
-    suspend fun generate(
+    override suspend fun generate(
         prompt: String,
-        maxTokens: Int = 256,
-        temperature: Float = 1.0f,
-        topP: Float = 0.1f,
+        maxTokens: Int,
+        temperature: Float,
+        topP: Float,
         onToken: (String) -> Unit
     ) = withContext(Dispatchers.IO) {
         if (isTransformer) {
@@ -563,7 +563,7 @@ class RWKVModel(private val tokenizer: ITokenizer) {
     // ==================== 资源管理 ====================
 
     /** 释放所有资源 */
-    fun close() {
+    override fun close() {
         stateMap.values.forEach { try { it.close() } catch (_: Exception) {} }
         stateMap.clear()
 

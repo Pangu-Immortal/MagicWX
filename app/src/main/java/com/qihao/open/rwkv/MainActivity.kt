@@ -12,10 +12,14 @@
  */
 package com.qihao.open.rwkv
 
+import android.Manifest
 import android.os.Bundle
+import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -65,11 +69,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.qihao.open.rwkv.model.ModelArch
 import com.qihao.open.rwkv.model.ModelInfo
@@ -95,48 +105,75 @@ class MainActivity : ComponentActivity() {
 /** 主应用入口 Composable */
 @Composable
 fun MainApp(viewModel: MainViewModel = viewModel()) {
+    val context = LocalContext.current                         // 当前 Activity 上下文，用于请求通知权限
     val appState by viewModel.appState.collectAsState()             // 应用状态
     val selectedModel by viewModel.selectedModel.collectAsState()   // 选中模型
     val downloadedModels by viewModel.downloadedModels.collectAsState() // 已下载模型
     val downloadProgress by viewModel.downloadProgress.collectAsState() // 下载进度
+    val downloadProgressByModelId by viewModel.downloadProgressByModelId.collectAsState() // 首页模型下载进度
     val downloadInfo by viewModel.downloadInfo.collectAsState()     // 下载信息
     val messages by viewModel.messages.collectAsState()             // 聊天消息
     val errorMessage by viewModel.errorMessage.collectAsState()     // 错误信息
     val isGenerating by viewModel.isGenerating.collectAsState()     // 是否生成中
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        viewModel.downloadModel()                              // 权限结果不阻断下载，前台服务仍会展示系统级任务状态
+    }
 
-    // 根据应用状态显示不同界面
-    when (appState) {
-        AppState.MODEL_SELECT -> ModelSelectScreen(
-            downloadedModels = downloadedModels,
-            onSelectModel = { viewModel.selectModel(it) },
-            onDeleteModel = { viewModel.deleteModel(it) }
-        )
-        AppState.NEED_DOWNLOAD -> DownloadConfirmScreen(
-            modelInfo = selectedModel,
-            onConfirm = { viewModel.downloadModel() },
-            onBack = { viewModel.goToModelSelect() }
-        )
-        AppState.DOWNLOADING -> DownloadingScreen(
-            modelInfo = selectedModel,
-            progress = downloadProgress,
-            info = downloadInfo
-        )
-        AppState.LOADING_MODEL -> LoadingScreen(
-            modelName = selectedModel?.name ?: "模型"
-        )
-        AppState.READY -> ChatScreen(
-            modelName = selectedModel?.name ?: "AI",
-            messages = messages,
-            isGenerating = isGenerating,
-            onSend = { viewModel.sendMessage(it) },
-            onStop = { viewModel.stopGenerating() },
-            onReset = { viewModel.resetChat() },
-            onSwitchModel = { viewModel.switchModel() }
-        )
-        AppState.ERROR -> ErrorScreen(
-            message = errorMessage,
-            onRetry = { viewModel.goToModelSelect() }
-        )
+    val startDownloadWithNotificationPrompt = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            viewModel.downloadModel()
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .semantics { testTagsAsResourceId = true } // 将 testTag 暴露为 resource-id，便于真机自动化验收
+            .testTag("magicwx-root")
+    ) {
+        // 根据应用状态显示不同界面
+        when (appState) {
+            AppState.MODEL_SELECT -> ModelSelectScreen(
+                downloadedModels = downloadedModels,
+                downloadProgressByModelId = downloadProgressByModelId,
+                onSelectModel = { viewModel.selectModel(it) },
+                onDeleteModel = { viewModel.deleteModel(it) }
+            )
+            AppState.NEED_DOWNLOAD -> DownloadConfirmScreen(
+                modelInfo = selectedModel,
+                onConfirm = startDownloadWithNotificationPrompt,
+                onBack = { viewModel.goToModelSelect() }
+            )
+            AppState.DOWNLOADING -> DownloadingScreen(
+                modelInfo = selectedModel,
+                progress = downloadProgress,
+                info = downloadInfo,
+                onBackground = { viewModel.goToModelSelect() }
+            )
+            AppState.LOADING_MODEL -> LoadingScreen(
+                modelName = selectedModel?.name ?: "模型"
+            )
+            AppState.READY -> ChatScreen(
+                modelName = selectedModel?.name ?: "AI",
+                messages = messages,
+                isGenerating = isGenerating,
+                onSend = { viewModel.sendMessage(it) },
+                onStop = { viewModel.stopGenerating() },
+                onReset = { viewModel.resetChat() },
+                onSwitchModel = { viewModel.switchModel() }
+            )
+            AppState.ERROR -> ErrorScreen(
+                message = errorMessage,
+                onRetry = { viewModel.goToModelSelect() }
+            )
+        }
     }
 }
 
@@ -149,6 +186,7 @@ fun MainApp(viewModel: MainViewModel = viewModel()) {
 @Composable
 fun ModelSelectScreen(
     downloadedModels: Set<String>,
+    downloadProgressByModelId: Map<String, Int>,
     onSelectModel: (ModelInfo) -> Unit,
     onDeleteModel: (String) -> Unit
 ) {
@@ -187,6 +225,7 @@ fun ModelSelectScreen(
                     ModelCard(
                         modelInfo = modelInfo,
                         isDownloaded = modelInfo.id in downloadedModels,
+                        downloadProgress = downloadProgressByModelId[modelInfo.id],
                         onClick = { onSelectModel(modelInfo) },
                         onDelete = { onDeleteModel(modelInfo.id) }
                     )
@@ -201,12 +240,16 @@ fun ModelSelectScreen(
 fun ModelCard(
     modelInfo: ModelInfo,
     isDownloaded: Boolean,
+    downloadProgress: Int?,
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val isDownloading = downloadProgress != null && !isDownloaded // 已下载后不再显示下载中
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag("model-card-${modelInfo.id}")
             .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
@@ -269,17 +312,27 @@ fun ModelCard(
             ) {
                 // 文件大小
                 Text(
-                    text = if (modelInfo.fileSizeMB >= 1024) {
-                        "%.1f GB".format(modelInfo.fileSizeMB / 1024f)
-                    } else {
-                        "${modelInfo.fileSizeMB} MB"
-                    },
+                    text = displayModelSize(modelInfo),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 // 状态标签
-                if (isDownloaded) {
+                if (isDownloading) {
+                    Text(
+                        text = "下载中 ${downloadProgress}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else if (modelInfo.arch == ModelArch.BUILTIN) {
+                    Text(
+                        text = "内置可用",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else if (isDownloaded) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = "已下载",
@@ -293,7 +346,9 @@ fun ModelCard(
                             text = "删除",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.clickable { onDelete() }
+                            modifier = Modifier
+                                .testTag("delete-model-${modelInfo.id}")
+                                .clickable { onDelete() }
                         )
                     }
                 } else {
@@ -307,6 +362,19 @@ fun ModelCard(
                         }
                     )
                 }
+            }
+
+            if (isDownloading) {
+                Spacer(modifier = Modifier.height(8.dp))
+                // 首页实时下载进度条，后台下载时也保持可见
+                LinearProgressIndicator(
+                    progress = { downloadProgress.coerceIn(0, 100) / 100f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .testTag("model-download-progress-${modelInfo.id}")
+                )
             }
         }
     }
@@ -331,7 +399,10 @@ fun DownloadConfirmScreen(
             TopAppBar(
                 title = { Text("下载模型") },
                 navigationIcon = {
-                    TextButton(onClick = onBack) { Text("返回") }
+                    TextButton(
+                        onClick = onBack,
+                        modifier = Modifier.testTag("download-back-button")
+                    ) { Text("返回") }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
@@ -372,14 +443,10 @@ fun DownloadConfirmScreen(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    InfoRow("架构", if (info.arch == ModelArch.RWKV) "RWKV" else "Transformer")
+                    InfoRow("架构", displayModelArch(info))
                     InfoRow("参数量", info.paramSize)
                     InfoRow("量化", info.quantization)
-                    InfoRow("预估大小", if (info.fileSizeMB >= 1024) {
-                        "%.1f GB".format(info.fileSizeMB / 1024f)
-                    } else {
-                        "${info.fileSizeMB} MB"
-                    })
+                    InfoRow("预估大小", displayModelSize(info))
                     InfoRow("支持等级", if (info.isFullySupported) "完全支持" else "实验性")
                 }
             }
@@ -391,7 +458,8 @@ fun DownloadConfirmScreen(
                 onClick = onConfirm,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .height(48.dp)
+                    .testTag("start-download-button"),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text("开始下载", fontSize = 16.sp)
@@ -404,7 +472,8 @@ fun DownloadConfirmScreen(
                 onClick = onBack,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .height(48.dp)
+                    .testTag("return-model-select-button"),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text("返回选择", fontSize = 16.sp)
@@ -435,6 +504,25 @@ fun InfoRow(label: String, value: String) {
     }
 }
 
+/** 格式化模型大小显示 */
+private fun displayModelSize(modelInfo: ModelInfo): String {
+    if (modelInfo.arch == ModelArch.BUILTIN) return "内置"      // 内置体验模型不占外部下载空间
+    return if (modelInfo.fileSizeMB >= 1024) {
+        "%.1f GB".format(modelInfo.fileSizeMB / 1024f)
+    } else {
+        "${modelInfo.fileSizeMB} MB"
+    }
+}
+
+/** 格式化模型架构显示 */
+private fun displayModelArch(modelInfo: ModelInfo): String {
+    return when (modelInfo.arch) {
+        ModelArch.BUILTIN -> "内置体验"
+        ModelArch.RWKV -> "RWKV"
+        ModelArch.TRANSFORMER -> "Transformer"
+    }
+}
+
 // =============================================================================
 // 下载进度界面
 // =============================================================================
@@ -445,7 +533,8 @@ fun InfoRow(label: String, value: String) {
 fun DownloadingScreen(
     modelInfo: ModelInfo?,
     progress: Int,
-    info: String
+    info: String,
+    onBackground: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -510,6 +599,20 @@ fun DownloadingScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 后台下载按钮：只关闭下载页，前台服务和通知继续显示进度
+            OutlinedButton(
+                onClick = onBackground,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("background-download-button"),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("后台下载，返回模型选择", fontSize = 16.sp)
+            }
         }
     }
 }
@@ -597,9 +700,15 @@ fun ChatScreen(
                 ),
                 actions = {
                     // 重置对话按钮
-                    TextButton(onClick = onReset) { Text("重置") }
+                    TextButton(
+                        onClick = onReset,
+                        modifier = Modifier.testTag("reset-chat-button")
+                    ) { Text("重置") }
                     // 切换模型按钮
-                    TextButton(onClick = onSwitchModel) { Text("切换") }
+                    TextButton(
+                        onClick = onSwitchModel,
+                        modifier = Modifier.testTag("switch-model-button")
+                    ) { Text("切换") }
                 }
             )
         }
@@ -657,7 +766,9 @@ fun ChatScreen(
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = { inputText = it },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("chat-input"),
                         placeholder = { Text("输入消息...") },
                         shape = RoundedCornerShape(12.dp),
                         maxLines = 3,
@@ -670,7 +781,9 @@ fun ChatScreen(
                     if (isGenerating) {
                         Button(
                             onClick = onStop,
-                            modifier = Modifier.height(48.dp),
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("stop-generation-button"),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text("停止")
@@ -683,7 +796,9 @@ fun ChatScreen(
                                     inputText = "" // 清空输入框
                                 }
                             },
-                            modifier = Modifier.height(48.dp),
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("send-message-button"),
                             shape = RoundedCornerShape(12.dp),
                             enabled = inputText.isNotBlank()
                         ) {
@@ -789,7 +904,8 @@ fun ErrorScreen(
                 onClick = onRetry,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .height(48.dp)
+                    .testTag("error-return-model-select-button"),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text("返回选择模型", fontSize = 16.sp)

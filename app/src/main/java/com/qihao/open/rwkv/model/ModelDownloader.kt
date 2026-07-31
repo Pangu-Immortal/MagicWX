@@ -42,8 +42,10 @@ class ModelDownloader private constructor(
         private const val BUFFER_SIZE = 64 * 1024             // 读写缓冲区 64KB（提升下载速度）
         private const val OLD_MODEL_DIR = "model"             // 旧版单模型目录（用于迁移）
         private const val OLD_MODEL_FILE = "model.onnx"       // 旧版模型文件名
-        private const val MAX_RETRIES = 5                     // 最大重试次数（大文件需要更多）
+        private const val MAX_RETRIES = 12                    // 最大重试次数（大文件断点续传需要更多）
         private const val RETRY_DELAY_MS = 2000L              // 重试间隔基数（毫秒）
+        private const val EXTERNAL_DATA_HINT_BYTES = 10L * 1024L * 1024L // 小 ONNX 大模型通常需要外部数据
+        private const val HTTP_RANGE_NOT_SATISFIABLE = 416    // Android HttpURLConnection 未暴露该常量
     }
 
     constructor(context: Context) : this(context.filesDir, enableMigration = true)
@@ -165,9 +167,16 @@ class ModelDownloader private constructor(
      * @param modelInfo 模型元信息
      */
     fun getModelReadiness(modelInfo: ModelInfo): ModelReadiness {
+        if (modelInfo.arch == ModelArch.BUILTIN) {
+            return ModelReadiness(true, "内置体验模型无需下载") // 内置体验模型不依赖外部 ONNX 文件
+        }
+
         val modelFile = findOnnxFile(modelInfo.id)
         if (modelFile == null) {
             return ModelReadiness(false, "缺少完整的 ONNX 模型文件") // 主模型不存在时不能进入 READY
+        }
+        if (needsExternalData(modelInfo, modelFile) && !hasReadyExternalData(modelInfo.id, modelFile)) {
+            return ModelReadiness(false, "缺少 ONNX 外部数据文件", modelFile) // 防止小 ONNX 半包误进加载
         }
 
         if (modelInfo.arch == ModelArch.TRANSFORMER) {
@@ -182,17 +191,33 @@ class ModelDownloader private constructor(
         return ModelReadiness(true, "模型文件已就绪", modelFile)
     }
 
+    /** 判断大模型小 ONNX 是否需要伴随外部数据文件 */
+    private fun needsExternalData(modelInfo: ModelInfo, modelFile: File): Boolean {
+        return modelInfo.fileSizeMB > 10 && modelFile.length() < EXTERNAL_DATA_HINT_BYTES
+    }
+
+    /** 判断 ONNX 外部数据文件是否存在且非空 */
+    private fun hasReadyExternalData(modelId: String, modelFile: File): Boolean {
+        val dataFile = File(getModelDir(modelId), "${modelFile.name}_data")
+        return dataFile.isFile && dataFile.length() > 0L
+    }
+
     /**
      * 获取所有已下载模型的 ID 列表
      */
     fun getDownloadedModels(): Set<String> {
         val root = modelsRoot
-        if (!root.exists()) return emptySet()
-        return root.listFiles()
+        val builtinModels = ModelRegistry.models
+            .filter { it.arch == ModelArch.BUILTIN }             // 内置体验模型始终可用
+            .map { it.id }
+            .toSet()
+        if (!root.exists()) return builtinModels
+        val fileBackedModels = root.listFiles()
             ?.filter { it.isDirectory && isModelReady(it.name) }         // 只列出完整可加载模型包
             ?.map { it.name }
             ?.toSet()
             ?: emptySet()
+        return builtinModels + fileBackedModels
     }
 
     /**
@@ -200,6 +225,11 @@ class ModelDownloader private constructor(
      * @param modelId 模型唯一标识
      */
     fun deleteModel(modelId: String) {
+        val modelInfo = ModelRegistry.findById(modelId)
+        if (modelInfo?.arch == ModelArch.BUILTIN) {
+            Log.d(TAG, "跳过内置体验模型删除: $modelId")        // 内置模型不允许删除
+            return
+        }
         val dir = getModelDir(modelId)
         dir.listFiles()?.forEach { it.delete() }              // 删除目录下所有文件
         dir.delete()                                           // 删除空目录
@@ -309,6 +339,10 @@ class ModelDownloader private constructor(
                 Log.d(TAG, "伴随数据文件下载完成: $dataFilename (${dataTargetFile.length() / 1024 / 1024}MB)")
             } else {
                 Log.d(TAG, "无伴随数据文件（单文件模型）")
+                if (needsExternalData(modelInfo, targetFile)) {
+                    Log.e(TAG, "主 ONNX 文件过小且缺少外部数据文件: ${modelInfo.id}")
+                    return@withContext false                   // 需要外部数据的大模型不允许半包就绪
+                }
             }
 
             // ---- 第三阶段：下载 tokenizer.json（Transformer 模型需要） ----
@@ -365,17 +399,26 @@ class ModelDownloader private constructor(
         val tempFile = File(targetFile.parent, "${targetFile.name}$TEMP_SUFFIX")
 
         for (retry in 0 until MAX_RETRIES) {
+            var connection: HttpURLConnection? = null
             try {
-                val downloadedBytes = if (tempFile.exists()) tempFile.length() else 0L
-                val connection = openConnection(url, downloadedBytes)
+                var downloadedBytes = if (tempFile.exists()) tempFile.length() else 0L
+                connection = openConnection(url, downloadedBytes)
                 val responseCode = connection.responseCode
 
                 // 可选文件返回 404 不算错误
                 if (optional && (responseCode == HttpURLConnection.HTTP_NOT_FOUND ||
-                            responseCode == HttpURLConnection.HTTP_FORBIDDEN)
+                            responseCode == HttpURLConnection.HTTP_FORBIDDEN ||
+                            responseCode == HttpURLConnection.HTTP_UNAUTHORIZED)
                 ) {
                     connection.disconnect()
                     return false
+                }
+
+                if (responseCode == HTTP_RANGE_NOT_SATISFIABLE &&
+                    tempFile.isFile &&
+                    tempFile.length() > 0L
+                ) {
+                    return promoteTempFile(tempFile, targetFile)        // Range 已超出时视为临时文件已完整
                 }
 
                 // 校验响应码
@@ -391,10 +434,17 @@ class ModelDownloader private constructor(
                     return false
                 }
 
+                if (responseCode == HttpURLConnection.HTTP_OK && downloadedBytes > 0L) {
+                    Log.w(TAG, "服务器未接受 Range，重新从 0 下载: ${targetFile.name}")
+                    tempFile.delete()                                  // 服务器不支持续传时必须截断旧临时文件
+                    downloadedBytes = 0L
+                }
+
                 // 计算总大小
                 val contentLength = connection.contentLengthLong
                 val totalSize = if (responseCode == HttpURLConnection.HTTP_PARTIAL) {
-                    downloadedBytes + contentLength             // 断点续传：已下载 + 剩余
+                    parseContentRangeTotal(connection.getHeaderField("Content-Range"))
+                        ?: (downloadedBytes + contentLength)    // 优先使用服务端声明的完整总大小
                 } else {
                     contentLength                               // 全新下载
                 }
@@ -403,10 +453,10 @@ class ModelDownloader private constructor(
 
                 // 写入文件（追加模式用于断点续传）
                 val append = responseCode == HttpURLConnection.HTTP_PARTIAL
+                var currentDownloaded = downloadedBytes
                 connection.inputStream.use { input ->
                     FileOutputStream(tempFile, append).use { output ->
                         val buffer = ByteArray(BUFFER_SIZE)
-                        var currentDownloaded = downloadedBytes
                         var bytesRead: Int
 
                         while (input.read(buffer).also { bytesRead = it } != -1) {
@@ -426,25 +476,55 @@ class ModelDownloader private constructor(
 
                 connection.disconnect()
 
-                // 下载完成，重命名为正式文件
-                if (tempFile.renameTo(targetFile)) {
-                    Log.d(TAG, "文件下载完成: ${targetFile.name} (${targetFile.length() / 1024 / 1024}MB)")
-                    return true
-                } else {
-                    Log.e(TAG, "文件重命名失败: ${targetFile.name}")
+                if (totalSize > 0L && currentDownloaded < totalSize) {
+                    Log.w(
+                        TAG,
+                        "文件短读，继续断点续传: ${targetFile.name} ${currentDownloaded}/${totalSize}"
+                    )
+                    if (retry < MAX_RETRIES - 1) {
+                        Thread.sleep(RETRY_DELAY_MS * (retry + 1)) // 短读不改名，下一轮继续 Range
+                        continue
+                    }
                     return false
                 }
+
+                // 下载完成，重命名为正式文件
+                return promoteTempFile(tempFile, targetFile)
             } catch (e: Exception) {
                 Log.e(TAG, "下载异常 (尝试 ${retry + 1}/$MAX_RETRIES): ${e.message}")
                 if (retry < MAX_RETRIES - 1) {
                     Thread.sleep(RETRY_DELAY_MS * (retry + 1)) // 指数退避等待后重试
                 } else {
-                    if (optional) return false                 // 可选文件失败不抛异常
-                    throw e
+                    return false                               // 保留临时文件，下一次下载继续断点续传
                 }
+            } finally {
+                connection?.disconnect()
             }
         }
         return false
+    }
+
+    /** 将完整临时文件提升为正式文件 */
+    private fun promoteTempFile(tempFile: File, targetFile: File): Boolean {
+        if (!tempFile.isFile || tempFile.length() <= 0L) return false
+        if (targetFile.exists() && !targetFile.delete()) {
+            Log.e(TAG, "旧目标文件删除失败: ${targetFile.name}")
+            return false
+        }
+        return if (tempFile.renameTo(targetFile)) {
+            Log.d(TAG, "文件下载完成: ${targetFile.name} (${targetFile.length() / 1024 / 1024}MB)")
+            true
+        } else {
+            Log.e(TAG, "文件重命名失败: ${targetFile.name}")
+            false
+        }
+    }
+
+    /** 解析 Content-Range 中的完整文件大小 */
+    private fun parseContentRangeTotal(contentRange: String?): Long? {
+        if (contentRange == null) return null
+        val totalText = contentRange.substringAfter("/", missingDelimiterValue = "")
+        return totalText.toLongOrNull()
     }
 
     /**
@@ -461,6 +541,10 @@ class ModelDownloader private constructor(
             conn.connectTimeout = 30_000                       // 30 秒连接超时
             conn.readTimeout = 300_000                         // 5 分钟读取超时（大文件慢速网络）
             conn.instanceFollowRedirects = false               // 手动处理重定向（跨域需要）
+            conn.setRequestProperty("User-Agent", "MagicWX-Android/1.1")
+            conn.setRequestProperty("Accept", "*/*")
+            conn.setRequestProperty("Accept-Encoding", "identity") // 避免压缩导致 Content-Length 失真
+            conn.setRequestProperty("Connection", "close")
 
             // 断点续传请求头
             if (downloadedBytes > 0) {
