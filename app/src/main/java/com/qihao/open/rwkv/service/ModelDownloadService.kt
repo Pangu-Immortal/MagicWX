@@ -84,22 +84,37 @@ class ModelDownloadService : Service() {
             )
 
             var lastPercent = -1
-            val success = downloader.downloadModel(modelInfo) { downloaded, total, percent ->
-                if (percent != lastPercent) {
-                    lastPercent = percent
-                    updateNotification(modelInfo.name, percent, formatSize(downloaded, total))
+            val success = downloader.downloadModel(
+                modelInfo = modelInfo,
+                onProgress = { downloaded, total, percent ->
+                    if (percent != lastPercent) {
+                        lastPercent = percent
+                        updateNotification(modelInfo.name, percent, formatSize(downloaded, total))
+                        ModelDownloadEvents.publish(
+                            ModelDownloadEvent(
+                                modelId = modelId,
+                                type = ModelDownloadEventType.PROGRESS,
+                                downloadedBytes = downloaded,
+                                totalBytes = total,
+                                percent = percent,
+                                message = formatSize(downloaded, total)
+                            )
+                        )
+                    }
+                },
+                onStatus = { message ->
+                    // 下载源连接和切换也同步到前台通知，避免用户看到长时间静止状态
+                    updateNotification(modelInfo.name, lastPercent.coerceAtLeast(0), message)
                     ModelDownloadEvents.publish(
                         ModelDownloadEvent(
                             modelId = modelId,
                             type = ModelDownloadEventType.PROGRESS,
-                            downloadedBytes = downloaded,
-                            totalBytes = total,
-                            percent = percent,
-                            message = formatSize(downloaded, total)
+                            percent = lastPercent.coerceAtLeast(0),
+                            message = message
                         )
                     )
                 }
-            }
+            )
 
             if (success) {
                 updateNotification(modelInfo.name, 100, "下载完成")

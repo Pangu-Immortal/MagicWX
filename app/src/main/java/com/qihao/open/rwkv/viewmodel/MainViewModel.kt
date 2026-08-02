@@ -13,20 +13,19 @@
 package com.qihao.open.rwkv.viewmodel
 
 import android.app.Application
+import android.os.StatFs
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.qihao.open.rwkv.model.BuiltinExperienceModel
-import com.qihao.open.rwkv.model.HFTokenizer
-import com.qihao.open.rwkv.model.ITokenizer
-import com.qihao.open.rwkv.model.ModelArch
 import com.qihao.open.rwkv.model.ModelDownloader
 import com.qihao.open.rwkv.model.ModelInfo
 import com.qihao.open.rwkv.model.ModelRegistry
-import com.qihao.open.rwkv.model.RWKVModel
-import com.qihao.open.rwkv.model.RWKVTokenizer
+import com.qihao.open.rwkv.model.RuntimeAdapterType
 import com.qihao.open.rwkv.model.TextGenerationEngine
+import com.qihao.open.rwkv.model.adapter.ModelRuntimeAdapterFactory
+import com.qihao.open.rwkv.model.adapter.RuntimeLoadResult
 import com.qihao.open.rwkv.service.ModelDownloadEventType
 import com.qihao.open.rwkv.service.ModelDownloadEvents
 import com.qihao.open.rwkv.service.ModelDownloadService
@@ -40,7 +39,8 @@ import kotlinx.coroutines.launch
 data class ChatMessage(
     val content: String,            // 消息内容
     val isUser: Boolean,            // 是否为用户消息
-    val isGenerating: Boolean = false // 是否正在生成中
+    val isGenerating: Boolean = false, // 是否正在生成中
+    val durationMillis: Long = 0L    // AI 回复生成耗时，生成中实时更新，结束后冻结
 )
 
 /** 应用状态 */
@@ -61,8 +61,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val downloader = ModelDownloader(application)
 
-    // 分词器和模型（懒初始化）
-    private var tokenizer: ITokenizer? = null            // 分词器接口（RWKV 或 HF）
+    // 当前文本生成模型（懒初始化）
     private var model: TextGenerationEngine? = null
     private var generateJob: Job? = null // 当前生成任务
 
@@ -96,6 +95,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _downloadProgressByModelId = MutableStateFlow<Map<String, Int>>(emptyMap())
     val downloadProgressByModelId: StateFlow<Map<String, Int>> = _downloadProgressByModelId.asStateFlow()
 
+    // 本机当前可用存储字节数，读取 App 私有目录所在分区
+    private val _availableStorageBytes = MutableStateFlow(0L)
+    val availableStorageBytes: StateFlow<Long> = _availableStorageBytes.asStateFlow()
+
     // 聊天消息列表
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
@@ -110,13 +113,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         refreshDownloadedModels() // 启动时刷新已下载列表
+        refreshAvailableStorage() // 启动时读取本机剩余可用存储
         observeDownloadEvents()   // 监听前台服务下载进度
     }
 
     /** 刷新已下载模型列表 */
     private fun refreshDownloadedModels() {
         _downloadedModels.value = downloader.getDownloadedModels()
+        refreshAvailableStorage()                              // 模型包状态变化后同步剩余容量
         Log.d(TAG, "已下载模型: ${_downloadedModels.value}")
+    }
+
+    /** 刷新本机可用存储空间 */
+    private fun refreshAvailableStorage() {
+        try {
+            val statFs = StatFs(getApplication<Application>().filesDir.absolutePath)
+            _availableStorageBytes.value = statFs.availableBytes // 读取当前分区真实可写空间
+            Log.d(TAG, "本机可用存储: ${_availableStorageBytes.value} bytes")
+        } catch (e: Exception) {
+            Log.e(TAG, "读取本机可用存储失败: ${e.message}", e)
+            _availableStorageBytes.value = 0L                   // 读取失败时 UI 显示未知
+        }
     }
 
     /**
@@ -126,6 +143,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun selectModel(modelInfo: ModelInfo) {
         _selectedModel.value = modelInfo
         Log.d(TAG, "选中模型: ${modelInfo.id} (${modelInfo.name})")
+
+        if (!modelInfo.adapterAvailable) {
+            _appState.value = AppState.ERROR
+            _errorMessage.value = modelInfo.unavailableReason.ifBlank {
+                "当前模型需要 ${modelInfo.adapterType} adapter，暂未接入"
+            }
+            return
+        }
 
         if (downloader.isModelReady(modelInfo)) {
             // 已下载，直接加载
@@ -140,7 +165,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun downloadModel() {
         val modelInfo = _selectedModel.value ?: return                 // 未选中模型
         if (_appState.value == AppState.DOWNLOADING) return            // 防止重复下载
-        if (modelInfo.arch == ModelArch.BUILTIN) {
+        if (!modelInfo.adapterAvailable) {
+            _appState.value = AppState.ERROR
+            _errorMessage.value = modelInfo.unavailableReason.ifBlank {
+                "当前模型需要 ${modelInfo.adapterType} adapter，暂未接入"
+            }
+            return
+        }
+        if (modelInfo.adapterType == RuntimeAdapterType.BUILTIN_TEXT) {
             loadModel(modelInfo)                                       // 内置模型无需下载
             return
         }
@@ -167,24 +199,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // 释放旧模型资源
                 model?.close()
                 model = null
-                tokenizer = null
                 _loadedModelId.value = null
 
-                // 根据模型架构选择分词器
-                if (modelInfo.arch == ModelArch.BUILTIN) {
-                    val builtin = BuiltinExperienceModel()
-                    builtin.load()                                     // 内置体验模型不需要 ONNX 权重
-                    model = builtin
-                    Log.d(TAG, "内置体验模型初始化完成")
-                } else {
-                    tokenizer = createTokenizer(modelInfo)
-                    Log.d(TAG, "分词器初始化完成: ${tokenizer!!::class.simpleName}")
-
-                    // 初始化并加载 ONNX 模型
-                    val rwkv = RWKVModel(tokenizer!!)
-                    val modelPath = downloader.getModelPath(modelInfo.id)
-                    rwkv.loadModel(modelPath)
-                    model = rwkv
+                val adapter = ModelRuntimeAdapterFactory.create(modelInfo)
+                val loadResult = adapter.load(getApplication(), modelInfo, downloader)
+                when (loadResult) {
+                    is RuntimeLoadResult.Text -> {
+                        model = loadResult.engine                  // 仅文本 adapter 可进入聊天页
+                    }
+                    is RuntimeLoadResult.Unsupported -> {
+                        throw IllegalStateException(loadResult.reason)
+                    }
                 }
                 _loadedModelId.value = modelInfo.id
 
@@ -194,29 +219,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e(TAG, "模型加载失败 [${modelInfo.id}]: ${e.message}", e)
                 _appState.value = AppState.ERROR
                 _errorMessage.value = "模型加载失败: ${e.message}"
-            }
-        }
-    }
-
-    /**
-     * 根据模型架构创建对应的分词器
-     * - RWKV 模型：使用内置 vocab.json 的 RWKVTokenizer
-     * - Transformer 模型：使用下载的 tokenizer.json 的 HFTokenizer
-     */
-    private fun createTokenizer(modelInfo: ModelInfo): ITokenizer {
-        return if (modelInfo.arch == ModelArch.RWKV) {
-            RWKVTokenizer(getApplication())              // RWKV 内置分词器
-        } else {
-            // Transformer 模型：使用 HuggingFace tokenizer.json
-            val tokenizerPath = downloader.getTokenizerPath(modelInfo.id)
-            if (tokenizerPath != null) {
-                Log.d(TAG, "加载 HF 分词器: $tokenizerPath")
-                HFTokenizer(tokenizerPath, modelInfo.chatTemplate)
-            } else {
-                // Transformer tokenizer 是必需资产，缺失时必须阻止错误加载
-                val message = "Transformer 模型缺少 tokenizer.json: ${modelInfo.id}"
-                Log.e(TAG, message)
-                throw IllegalStateException(message)
             }
         }
     }
@@ -242,6 +244,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val userMsg = ChatMessage(content = userInput, isUser = true)
         _messages.value = _messages.value + userMsg
 
+        generateAssistantReply(rwkv, userInput)
+    }
+
+    /** 重试最近一轮 AI 回复 */
+    fun retryLastResponse() {
+        if (_isGenerating.value) return
+        val rwkv = model ?: return
+        val lastUserIndex = _messages.value.indexOfLast { it.isUser }
+        if (lastUserIndex < 0) return
+
+        val prompt = _messages.value[lastUserIndex].content
+        _messages.value = _messages.value.take(lastUserIndex + 1) // 移除旧 AI 回复，保留用户问题
+        model?.resetState()                                      // 重试必须从干净推理状态重新生成
+        generateAssistantReply(rwkv, prompt)
+    }
+
+    /** 为指定用户输入生成 AI 回复 */
+    private fun generateAssistantReply(rwkv: TextGenerationEngine, userInput: String) {
         // 添加空的 AI 消息占位
         val aiMsg = ChatMessage(content = "", isUser = false, isGenerating = true)
         _messages.value = _messages.value + aiMsg
@@ -249,6 +269,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isGenerating.value = true
 
         generateJob = viewModelScope.launch {
+            val startedAt = SystemClock.elapsedRealtime()
             try {
                 val buffer = StringBuilder()
 
@@ -259,23 +280,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     topP = 0.1f
                 ) { token ->
                     buffer.append(token)
+                    val visibleContent = sanitizeModelOutput(buffer.toString())
 
                     // 更新最后一条消息的内容
                     val current = _messages.value.toMutableList()
                     current[current.lastIndex] = ChatMessage(
-                        content = buffer.toString(),
+                        content = visibleContent,
                         isUser = false,
-                        isGenerating = true
+                        isGenerating = true,
+                        durationMillis = SystemClock.elapsedRealtime() - startedAt
                     )
                     _messages.value = current
                 }
 
                 // 生成完毕，标记为非生成状态
+                val finalContent = sanitizeModelOutput(buffer.toString())
                 val current = _messages.value.toMutableList()
                 current[current.lastIndex] = ChatMessage(
-                    content = buffer.toString().ifEmpty { "(无输出)" },
+                    content = finalContent.ifEmpty { "(无输出)" },
                     isUser = false,
-                    isGenerating = false
+                    isGenerating = false,
+                    durationMillis = SystemClock.elapsedRealtime() - startedAt
                 )
                 _messages.value = current
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -285,7 +310,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 current[current.lastIndex] = ChatMessage(
                     content = current[current.lastIndex].content.ifEmpty { "(已停止)" },
                     isUser = false,
-                    isGenerating = false
+                    isGenerating = false,
+                    durationMillis = SystemClock.elapsedRealtime() - startedAt
                 )
                 _messages.value = current
             } catch (e: Exception) {
@@ -294,7 +320,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 current[current.lastIndex] = ChatMessage(
                     content = "生成出错: ${e.message}",
                     isUser = false,
-                    isGenerating = false
+                    isGenerating = false,
+                    durationMillis = SystemClock.elapsedRealtime() - startedAt
                 )
                 _messages.value = current
             } finally {
@@ -323,7 +350,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun deleteModel(modelId: String) {
         val modelInfo = ModelRegistry.findById(modelId)
-        if (modelInfo?.arch == ModelArch.BUILTIN) {
+        if (modelInfo?.adapterType == RuntimeAdapterType.BUILTIN_TEXT) {
             Log.d(TAG, "内置体验模型不可删除: $modelId")
             refreshDownloadedModels()
             return
@@ -361,6 +388,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     ModelDownloadEventType.PROGRESS -> {
                         updateModelDownloadProgress(event.modelId, event.percent)
+                        refreshAvailableStorage()              // 下载过程中实时反映空间消耗
                         if (event.modelId == selectedId) {
                             _downloadProgress.value = event.percent
                             _downloadInfo.value = event.message.ifEmpty {
@@ -380,6 +408,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     ModelDownloadEventType.FAILED -> {
                         removeModelDownloadProgress(event.modelId)
+                        refreshAvailableStorage()
                         if (event.modelId == selectedId) {
                             _appState.value = AppState.ERROR
                             _errorMessage.value = event.message.ifEmpty { "模型下载失败，请检查网络后重试" }
@@ -413,6 +442,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             "%.1f MB / %.1f MB".format(dlMB, totalMB) // MB 显示
         }
+    }
+
+    /** 清理模型内部控制文本，避免思考块或模板标记直接显示到聊天 UI */
+    private fun sanitizeModelOutput(raw: String): String {
+        var text = raw
+        while (true) {
+            val start = text.indexOf("<think>")
+            if (start < 0) break
+            val end = text.indexOf("</think>", startIndex = start + "<think>".length)
+            text = if (end >= 0) {
+                text.removeRange(start, end + "</think>".length) // 删除完整思考块
+            } else {
+                text.substring(0, start)                         // 未闭合思考块暂不展示
+            }
+        }
+        return text
+            .replace("<|im_start|>", "")
+            .replace("<|im_end|>", "")
+            .trimStart()
     }
 
     override fun onCleared() {

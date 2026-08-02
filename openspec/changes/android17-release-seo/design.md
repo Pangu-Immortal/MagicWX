@@ -18,14 +18,17 @@ The project currently builds with AGP 8.7.3, Gradle 8.11.1, Kotlin 2.1.0, `compi
 
 ## Decisions
 
-1. Use `versionName=1.1.0` and `versionCode=2`.
-   - Rationale: existing GitHub latest release is `V1.0.1`; this is a minor release with compatibility and metadata changes.
+1. Use `versionName=1.1.3` and `versionCode=5`.
+   - Rationale: `1.1.3` adds the code-level model capability schema and runtime adapter gate after pruning failed model entries, retesting retained models, and documenting the broader mobile model roadmap.
 
 2. Use AGP 9 built-in Kotlin for API 37 targeting.
    - Rationale: AGP 8.7.3 rejected the installed API 37 platform layout, while AGP 9.3.1 with Gradle 9.6.1 verified `compileSdk=37` and `targetSdk=37`. The app is single-module and has no custom legacy variant API usage.
 
 3. Publish an APK artifact, not signing credentials.
    - Rationale: no release signing material is present or authorized for commit. A generated release APK can be attached to GitHub Release with its signing state disclosed.
+
+4. Keep candidates in `ModelRegistry.allModels`, not in the visible `ModelRegistry.models` list.
+   - Rationale: multimodal candidates now have capability, asset, adapter, and visibility metadata in code, but only `BUILTIN_TEXT` and `ONNX_TEXT_GENERATION` are implemented and device-verified.
 
 ## Risks / Trade-offs
 

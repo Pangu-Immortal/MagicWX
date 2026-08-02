@@ -16,7 +16,7 @@
  * 关键改进：
  * - 保留模型文件原始名称（如 model_q4.onnx），避免 ONNX 外部数据引用断裂
  * - 自动检测并下载伴随的 _data 数据文件
- * - 网络异常自动重试（最多5次，指数退避）
+ * - 网络异常按源快速重试（每个下载源最多 2 次）并自动切换备用源
  * - 增大读写缓冲区到 64KB 提升下载速度
  */
 package com.qihao.open.rwkv.model
@@ -42,10 +42,14 @@ class ModelDownloader private constructor(
         private const val BUFFER_SIZE = 64 * 1024             // 读写缓冲区 64KB（提升下载速度）
         private const val OLD_MODEL_DIR = "model"             // 旧版单模型目录（用于迁移）
         private const val OLD_MODEL_FILE = "model.onnx"       // 旧版模型文件名
-        private const val MAX_RETRIES = 12                    // 最大重试次数（大文件断点续传需要更多）
-        private const val RETRY_DELAY_MS = 2000L              // 重试间隔基数（毫秒）
+        private const val MAX_RETRIES = 2                     // 单个下载源最多试 2 次，兼顾断点续传和快速切源
+        private const val RETRY_DELAY_MS = 500L               // 重试间隔基数（毫秒），避免用户长时间无反馈
         private const val EXTERNAL_DATA_HINT_BYTES = 10L * 1024L * 1024L // 小 ONNX 大模型通常需要外部数据
         private const val HTTP_RANGE_NOT_SATISFIABLE = 416    // Android HttpURLConnection 未暴露该常量
+        private const val FAST_CONNECT_TIMEOUT_MS = 5_000     // 镜像源连接 5 秒无响应即失败，减少首屏等待
+        private const val FAST_READ_TIMEOUT_MS = 8_000        // 镜像源 8 秒无下载进度即重试或切换备用源
+        private const val SLOW_CONNECT_TIMEOUT_MS = 15_000    // GitHub 等单源大文件允许更长连接时间
+        private const val SLOW_READ_TIMEOUT_MS = 120_000      // GitHub Release 首包慢，读超时放宽避免误中断
     }
 
     constructor(context: Context) : this(context.filesDir, enableMigration = true)
@@ -121,6 +125,17 @@ class ModelDownloader private constructor(
         return file.isFile && file.length() > 0L               // Transformer 必须有有效分词器文件
     }
 
+    /** 获取模型资产的本地路径 */
+    fun getAssetPath(modelInfo: ModelInfo, asset: ModelAsset): String {
+        return File(getModelDir(modelInfo.id), asset.filename).absolutePath
+    }
+
+    /** 判断显式资产是否已经下载完成 */
+    private fun hasReadyAsset(modelInfo: ModelInfo, asset: ModelAsset): Boolean {
+        val file = File(getAssetPath(modelInfo, asset))
+        return file.isFile && file.length() > 0L               // 所有必需资产必须是非空正式文件
+    }
+
     /**
      * 获取指定模型的文件路径
      * @param modelId 模型唯一标识
@@ -167,8 +182,25 @@ class ModelDownloader private constructor(
      * @param modelInfo 模型元信息
      */
     fun getModelReadiness(modelInfo: ModelInfo): ModelReadiness {
-        if (modelInfo.arch == ModelArch.BUILTIN) {
+        if (modelInfo.adapterType == RuntimeAdapterType.BUILTIN_TEXT) {
             return ModelReadiness(true, "内置体验模型无需下载") // 内置体验模型不依赖外部 ONNX 文件
+        }
+        if (!modelInfo.adapterAvailable) {
+            return ModelReadiness(
+                false,
+                modelInfo.unavailableReason.ifBlank {
+                    "当前模型需要 ${modelInfo.adapterType} adapter，暂未接入"
+                }
+            )
+        }
+
+        val requiredAssets = modelInfo.resolvedAssets().filter { it.required }
+        val missingAsset = requiredAssets.firstOrNull { !hasReadyAsset(modelInfo, it) }
+        if (missingAsset != null && modelInfo.assets.isNotEmpty()) {
+            return ModelReadiness(false, "缺少必需资产: ${missingAsset.filename}")
+        }
+        if (modelInfo.assets.isNotEmpty() && modelInfo.adapterType != RuntimeAdapterType.ONNX_TEXT_GENERATION) {
+            return ModelReadiness(true, "显式模型资产已就绪") // 非文本 adapter 接入后按资产清单判定，不强制 tokenizer
         }
 
         val modelFile = findOnnxFile(modelInfo.id)
@@ -208,7 +240,7 @@ class ModelDownloader private constructor(
     fun getDownloadedModels(): Set<String> {
         val root = modelsRoot
         val builtinModels = ModelRegistry.models
-            .filter { it.arch == ModelArch.BUILTIN }             // 内置体验模型始终可用
+            .filter { it.adapterType == RuntimeAdapterType.BUILTIN_TEXT } // 内置体验模型始终可用
             .map { it.id }
             .toSet()
         if (!root.exists()) return builtinModels
@@ -226,7 +258,7 @@ class ModelDownloader private constructor(
      */
     fun deleteModel(modelId: String) {
         val modelInfo = ModelRegistry.findById(modelId)
-        if (modelInfo?.arch == ModelArch.BUILTIN) {
+        if (modelInfo?.adapterType == RuntimeAdapterType.BUILTIN_TEXT) {
             Log.d(TAG, "跳过内置体验模型删除: $modelId")        // 内置模型不允许删除
             return
         }
@@ -245,7 +277,13 @@ class ModelDownloader private constructor(
         val oldFile = File(oldDir, OLD_MODEL_FILE)             // 旧模型文件
         if (!oldFile.exists()) return                          // 无旧文件则跳过
 
-        val defaultId = ModelRegistry.getDefault().id          // 默认模型 ID
+        val legacyTarget = ModelRegistry.models.firstOrNull { it.arch == ModelArch.RWKV } // 只迁移到仍展示的 RWKV 模型
+        if (legacyTarget == null) {
+            Log.d(TAG, "注册表未启用 RWKV，跳过旧模型迁移: ${oldFile.absolutePath}")
+            return                                             // 避免把旧权重塞入内置体验模型目录
+        }
+
+        val defaultId = legacyTarget.id                        // 旧版单模型只对应 RWKV 权重
         val newDir = getModelDir(defaultId)                    // 新目录
 
         if (findOnnxFile(defaultId) != null) {
@@ -280,11 +318,31 @@ class ModelDownloader private constructor(
      */
     suspend fun downloadModel(
         modelInfo: ModelInfo,
-        onProgress: (downloaded: Long, total: Long, percent: Int) -> Unit
+        onProgress: (downloaded: Long, total: Long, percent: Int) -> Unit,
+        onStatus: ((message: String) -> Unit)? = null
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             val modelDir = getModelDir(modelInfo.id)
             modelDir.mkdirs()                                  // 确保目录存在
+
+            if (!modelInfo.adapterAvailable) {
+                Log.e(TAG, "adapter 未接入，拒绝下载候选模型: ${modelInfo.id}")
+                onStatus?.invoke(modelInfo.unavailableReason.ifBlank {
+                    "当前模型需要 ${modelInfo.adapterType} adapter，暂未接入"
+                })
+                return@withContext false
+            }
+
+            if (modelInfo.adapterType == RuntimeAdapterType.BUILTIN_TEXT) {
+                onProgress(0L, 0L, 100)                         // 内置模型无需下载，直接完成
+                return@withContext true
+            }
+
+            if (modelInfo.assets.isNotEmpty()) {
+                val assetSuccess = downloadDeclaredAssets(modelInfo, onProgress, onStatus)
+                if (!assetSuccess) return@withContext false
+                return@withContext isModelReady(modelInfo)       // 显式资产下载后仍走统一门禁
+            }
 
             // 提取原始文件名（保留原名避免 ONNX 外部数据引用断裂）
             val filename = extractFilename(modelInfo.downloadUrl)
@@ -298,12 +356,13 @@ class ModelDownloader private constructor(
                 return@withContext true
             }
 
-            Log.d(TAG, "开始下载模型: ${modelInfo.id} → ${modelInfo.downloadUrl}")
+            Log.d(TAG, "开始下载模型: ${modelInfo.id} → ${buildMirrorUrls(modelInfo.downloadUrl)}")
 
             // ---- 第一阶段：下载主模型文件 ----
-            val mainSuccess = downloadSingleFile(
-                url = modelInfo.downloadUrl,
+            val mainSuccess = downloadFirstAvailableFile(
+                urls = buildMirrorUrls(modelInfo.downloadUrl),
                 targetFile = targetFile,
+                onStatus = onStatus,
                 onProgress = onProgress                        // 直接透传进度
             )
 
@@ -320,10 +379,11 @@ class ModelDownloader private constructor(
             Log.d(TAG, "尝试下载伴随数据文件: $dataFilename")
             val mainFileSize = targetFile.length()             // 主文件大小
 
-            val dataSuccess = downloadSingleFile(
-                url = dataUrl,
+            val dataSuccess = downloadFirstAvailableFile(
+                urls = buildMirrorUrls(dataUrl),
                 targetFile = dataTargetFile,
                 optional = true,                               // 可选文件，404不算失败
+                onStatus = onStatus,
                 onProgress = { downloaded, total, _ ->
                     // 合并进度：主文件大小 + 数据文件进度
                     val combinedTotal = mainFileSize + total
@@ -350,10 +410,11 @@ class ModelDownloader private constructor(
                 val tokenizerFile = File(modelDir, "tokenizer.json")
                 if (!hasReadyTokenizer(modelInfo.id)) {
                     Log.d(TAG, "下载分词器: tokenizer.json")
-                    val tokenizerSuccess = downloadSingleFile(
-                        url = modelInfo.tokenizerUrl,
+                    val tokenizerSuccess = downloadFirstAvailableFile(
+                        urls = buildMirrorUrls(modelInfo.tokenizerUrl),
                         targetFile = tokenizerFile,
-                        optional = false                 // Transformer 分词器是必需资产
+                        optional = false,                // Transformer 分词器是必需资产
+                        onStatus = onStatus
                     )
                     if (tokenizerSuccess) {
                         Log.d(TAG, "分词器下载完成: tokenizer.json (${tokenizerFile.length() / 1024}KB)")
@@ -374,6 +435,124 @@ class ModelDownloader private constructor(
         } catch (e: Exception) {
             Log.e(TAG, "下载异常 [${modelInfo.id}]: ${e.message}", e)
             return@withContext false
+        }
+    }
+
+    /** 下载显式声明的多资产模型包 */
+    private fun downloadDeclaredAssets(
+        modelInfo: ModelInfo,
+        onProgress: (downloaded: Long, total: Long, percent: Int) -> Unit,
+        onStatus: ((message: String) -> Unit)?
+    ): Boolean {
+        val assets = modelInfo.resolvedAssets().filter { it.url.isNotBlank() }
+        if (assets.isEmpty()) {
+            onStatus?.invoke("模型未声明可下载资产")
+            return false
+        }
+
+        var completedBytes = assets.sumOf { asset ->
+            val file = File(getAssetPath(modelInfo, asset))
+            if (file.isFile) file.length() else 0L              // 已存在资产计入聚合进度
+        }
+        val knownTotalBytes = assets.sumOf { asset ->
+            val file = File(getAssetPath(modelInfo, asset))
+            if (file.isFile) file.length() else 0L              // 远端总大小未知前，先用本地已完成大小兜底
+        }
+
+        assets.forEachIndexed { index, asset ->
+            val targetFile = File(getAssetPath(modelInfo, asset))
+            if (targetFile.isFile && targetFile.length() > 0L) {
+                onStatus?.invoke("资产已存在: ${asset.filename}")
+                return@forEachIndexed
+            }
+
+            onStatus?.invoke("正在下载资产 ${index + 1}/${assets.size}: ${asset.filename}")
+            val success = downloadFirstAvailableFile(
+                urls = buildMirrorUrls(asset.url),
+                targetFile = targetFile,
+                optional = !asset.required,
+                onStatus = onStatus,
+                onProgress = { downloaded, total, _ ->
+                    val dynamicTotal = if (total > 0L) {
+                        knownTotalBytes + total                 // 当前资产有长度时显示可计算总量
+                    } else {
+                        knownTotalBytes
+                    }
+                    val dynamicDownloaded = completedBytes + downloaded
+                    val percent = if (dynamicTotal > 0L) {
+                        (dynamicDownloaded * 100 / dynamicTotal).toInt().coerceIn(0, 99)
+                    } else {
+                        ((index * 100) / assets.size).coerceIn(0, 99)
+                    }
+                    onProgress(dynamicDownloaded, dynamicTotal, percent)
+                }
+            )
+            if (!success && asset.required) {
+                Log.e(TAG, "必需资产下载失败: ${modelInfo.id}/${asset.filename}")
+                return false
+            }
+            if (targetFile.isFile) completedBytes += targetFile.length()
+        }
+
+        onProgress(completedBytes, completedBytes, 100)
+        return true
+    }
+
+    /** 从多个候选源下载同一个文件，当前源无进度或失败时快速切到下一个源 */
+    private fun downloadFirstAvailableFile(
+        urls: List<String>,
+        targetFile: File,
+        optional: Boolean = false,
+        onStatus: ((message: String) -> Unit)? = null,
+        onProgress: ((downloaded: Long, total: Long, percent: Int) -> Unit)? = null
+    ): Boolean {
+        for ((index, url) in urls.withIndex()) {
+            onStatus?.invoke("正在连接 ${sourceName(url)}")
+            Log.d(TAG, "尝试下载源: $url")
+            if (downloadSingleFile(url, targetFile, optional, onProgress)) {
+                Log.d(TAG, "下载源成功: $url")
+                return true
+            }
+            if (optional && targetFile.exists().not()) {
+                Log.d(TAG, "可选文件当前源不可用，尝试下一个源: $url")
+            } else {
+                Log.w(TAG, "下载源失败，切换下一个源: $url")
+            }
+            if (index < urls.lastIndex) {
+                onStatus?.invoke("当前源无响应，正在切换备用源")
+            }
+        }
+        return false
+    }
+
+    /** 根据原始 URL 生成下载候选源，国内网络优先使用 ModelScope */
+    private fun buildMirrorUrls(originalUrl: String): List<String> {
+        if (originalUrl.isBlank()) return emptyList()
+        val urls = linkedSetOf<String>()
+        val modelScopeUrl = toModelScopeUrl(originalUrl)
+        if (modelScopeUrl != null) urls += modelScopeUrl        // 国内优先：ModelScope 同路径直链
+        urls += originalUrl                                     // 原始源作为兜底
+        return urls.toList()
+    }
+
+    /** 将 HuggingFace / hf-mirror 路径转换为 ModelScope 同路径直链 */
+    private fun toModelScopeUrl(url: String): String? {
+        return when {
+            url.startsWith("https://hf-mirror.com/") ->
+                url.replace("https://hf-mirror.com/", "https://modelscope.cn/models/")
+            url.startsWith("https://huggingface.co/") ->
+                url.replace("https://huggingface.co/", "https://modelscope.cn/models/")
+            else -> null
+        }
+    }
+
+    /** 根据 URL 展示用户可理解的源名称 */
+    private fun sourceName(url: String): String {
+        return when {
+            url.startsWith("https://modelscope.cn/") -> "ModelScope"
+            url.startsWith("https://hf-mirror.com/") -> "HF Mirror"
+            url.startsWith("https://huggingface.co/") -> "HuggingFace"
+            else -> URL(url).host
         }
     }
 
@@ -410,7 +589,6 @@ class ModelDownloader private constructor(
                             responseCode == HttpURLConnection.HTTP_FORBIDDEN ||
                             responseCode == HttpURLConnection.HTTP_UNAUTHORIZED)
                 ) {
-                    connection.disconnect()
                     return false
                 }
 
@@ -426,7 +604,6 @@ class ModelDownloader private constructor(
                     responseCode != HttpURLConnection.HTTP_PARTIAL
                 ) {
                     Log.e(TAG, "HTTP $responseCode (尝试 ${retry + 1}/$MAX_RETRIES) → $url")
-                    connection.disconnect()
                     if (retry < MAX_RETRIES - 1) {
                         Thread.sleep(RETRY_DELAY_MS * (retry + 1)) // 指数退避
                         continue
@@ -473,8 +650,6 @@ class ModelDownloader private constructor(
                         }
                     }
                 }
-
-                connection.disconnect()
 
                 if (totalSize > 0L && currentDownloaded < totalSize) {
                     Log.w(
@@ -538,8 +713,8 @@ class ModelDownloader private constructor(
 
         while (redirectCount < 10) {
             val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 30_000                       // 30 秒连接超时
-            conn.readTimeout = 300_000                         // 5 分钟读取超时（大文件慢速网络）
+            conn.connectTimeout = connectTimeoutFor(urlStr)     // 按源类型设置连接超时，兼顾快切和大文件稳定性
+            conn.readTimeout = readTimeoutFor(urlStr)           // 按源类型设置读超时，防止 GitHub 大文件首包误失败
             conn.instanceFollowRedirects = false               // 手动处理重定向（跨域需要）
             conn.setRequestProperty("User-Agent", "MagicWX-Android/1.1")
             conn.setRequestProperty("Accept", "*/*")
@@ -560,6 +735,9 @@ class ModelDownloader private constructor(
                 conn.disconnect()
                 if (location != null) {
                     url = URL(url, location)                   // 支持相对和绝对 URL
+                    if (shouldBlockRedirect(urlStr, url.toString())) {
+                        throw RuntimeException("镜像源重定向到不可用 HuggingFace: $url")
+                    }
                     redirectCount++
                     Log.d(TAG, "重定向到: $url")
                     continue
@@ -570,5 +748,28 @@ class ModelDownloader private constructor(
         }
 
         throw RuntimeException("重定向次数过多 (>10)")
+    }
+
+    /** 阻止 hf-mirror 继续跳到 HuggingFace，避免手机网络反复 30 秒超时 */
+    private fun shouldBlockRedirect(originalUrl: String, redirectedUrl: String): Boolean {
+        return originalUrl.startsWith("https://hf-mirror.com/") &&
+            redirectedUrl.startsWith("https://huggingface.co/")
+    }
+
+    /** 根据原始下载源返回连接超时，镜像源快切，GitHub Release 单源放宽 */
+    private fun connectTimeoutFor(url: String): Int {
+        return if (isSlowSingleSource(url)) SLOW_CONNECT_TIMEOUT_MS else FAST_CONNECT_TIMEOUT_MS
+    }
+
+    /** 根据原始下载源返回读超时，避免大文件 CDN 首包慢导致下载中断 */
+    private fun readTimeoutFor(url: String): Int {
+        return if (isSlowSingleSource(url)) SLOW_READ_TIMEOUT_MS else FAST_READ_TIMEOUT_MS
+    }
+
+    /** 判断是否为无 ModelScope 备用源的大文件下载域 */
+    private fun isSlowSingleSource(url: String): Boolean {
+        return url.startsWith("https://github.com/") ||
+            url.contains("github-releases.githubusercontent.com") ||
+            url.contains("release-assets.githubusercontent.com")
     }
 }

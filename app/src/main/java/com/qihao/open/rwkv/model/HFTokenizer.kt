@@ -15,11 +15,16 @@ package com.qihao.open.rwkv.model
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.io.File
 
 /** 聊天模板类型 */
 enum class ChatTemplate {
-    CHATML,     // SmolLM2, Qwen3, DeepSeek, Phi-3, TinyLlama, StableLM, MiniCPM
+    CHATML,     // SmolLM2, DeepSeek, Phi-3, TinyLlama, StableLM, MiniCPM
+    QWEN3,      // Qwen3，默认追加 /no_think，避免普通聊天暴露推理块
+    DEEPSEEK_R1, // DeepSeek-R1 Distill，使用官方 <｜User｜>/<｜Assistant｜> 模板
+    TINYLLAMA,  // TinyLlama Chat，使用 <|user|>/<|assistant|> 模板
     LLAMA3,     // Llama 3.2
     GEMMA       // Gemma 3
 }
@@ -35,10 +40,20 @@ class HFTokenizer(
 
     private val encoder: Map<String, Int>               // 文本 → token ID
     private val decoder: Map<Int, String>               // token ID → 文本
-    private val prefixSet: Set<String>                  // 前缀集合（加速贪心匹配）
+    private val prefixSet: Set<String>                  // 前缀集合（用于 SentencePiece 贪心匹配回退）
+    private val bpeRanks: Map<Pair<String, String>, Int> // BPE merge 对 → 优先级
+    private val bpeCache = mutableMapOf<String, List<Int>>() // BPE 结果缓存，降低重复编码开销
+    private val specialTokenIds: Map<String, Int>       // 特殊 token 文本 → token ID
+    private val addedTokenIds: Map<String, Int>         // added_tokens 文本 → token ID，包含 special=false 的控制符
+    private val addedTokenTexts: List<String>           // added_tokens 文本，按长度排序用于优先匹配
+    private val specialTokenIdSet: Set<Int>             // 特殊 token ID 集合，用于解码过滤
+    private val controlTokenIdSet: Set<Int>             // 控制 token ID 集合，用于过滤模板符号
     private val bytesToUnicode: Map<Int, Char>          // GPT-2 字节到 Unicode 映射
     private val unicodeToBytes: Map<Char, Int>          // Unicode 到字节的反向映射
     private var useByteLevel = false                    // 是否使用字节级 BPE（GPT-2 风格）
+    private val byteLevelPattern = Regex(
+        """'s|'t|'re|'ve|'m|'ll|'d| ?[\p{L}]+| ?[\p{N}]+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+    )
 
     override val eosTokenId: Int                        // 主 EOS token ID
     override val stopTokenIds: Set<Int>                 // 所有停止 token ID
@@ -60,6 +75,7 @@ class HFTokenizer(
         val model = root["model"] as? Map<String, Any>
         @Suppress("UNCHECKED_CAST")
         val vocab = model?.get("vocab") as? Map<String, Double> ?: emptyMap()
+        val ranks = mutableMapOf<Pair<String, String>, Int>()
 
         for ((text, idDouble) in vocab) {
             val id = idDouble.toInt()                   // Gson 将整数解析为 Double
@@ -67,8 +83,25 @@ class HFTokenizer(
             dec[id] = text
         }
 
+        // ---- 解析 model.merges：BPE 的核心规则，不能用词表贪心替代 ----
+        @Suppress("UNCHECKED_CAST")
+        val merges = model?.get("merges") as? List<Any> ?: emptyList()
+        for ((rank, merge) in merges.withIndex()) {
+            val parts = when (merge) {
+                is String -> merge.split(" ")
+                is List<*> -> merge.mapNotNull { it as? String }
+                else -> emptyList()
+            }
+            if (parts.size == 2) {
+                ranks[parts[0] to parts[1]] = rank       // rank 越小优先级越高
+            }
+        }
+
         // ---- 解析 added_tokens（特殊 token）----
         val stops = mutableSetOf<Int>()
+        val specialIds = mutableMapOf<String, Int>()
+        val addedIds = mutableMapOf<String, Int>()
+        val controlIds = mutableSetOf<Int>()
         var mainEos = 0
 
         @Suppress("UNCHECKED_CAST")
@@ -81,12 +114,22 @@ class HFTokenizer(
 
             enc[content] = id                           // 特殊 token 也加入编码映射
             dec[id] = content
+            addedIds[content] = id                       // added token 必须整体编码，DeepSeek 部分控制符 special=false
 
-            // 识别停止 token
+            if (special) {
+                specialIds[content] = id                 // 编码时必须先整体匹配特殊 token
+            }
+            if (isControlTokenText(content)) {
+                controlIds.add(id)                       // 输出时过滤所有模板控制符，避免 UI 暴露协议标记
+            }
+
+            // 识别停止 token：结束符和新一轮角色起始符都不应进入 UI 文本
             if (special && content in setOf(
                     "</s>", "<|endoftext|>", "<|im_end|>",
                     "<|eot_id|>", "<eos>", "<|end|>",
-                    "<end_of_turn>", "<|end_of_text|>"
+                    "<end_of_turn>", "<|end_of_text|>",
+                    "<|im_start|>", "<|start_header_id|>",
+                    "<start_of_turn>"
                 )
             ) {
                 stops.add(id)
@@ -99,6 +142,12 @@ class HFTokenizer(
 
         encoder = enc
         decoder = dec
+        bpeRanks = ranks
+        specialTokenIds = specialIds
+        addedTokenIds = addedIds
+        addedTokenTexts = addedIds.keys.sortedByDescending { it.length }
+        specialTokenIdSet = specialIds.values.toSet()
+        controlTokenIdSet = controlIds + specialTokenIdSet
         eosTokenId = mainEos
         stopTokenIds = stops
         vocabSize = dec.size
@@ -124,32 +173,131 @@ class HFTokenizer(
         }
         prefixSet = pfx
 
-        Log.d(TAG, "词汇表加载完成: ${dec.size} 个 token, EOS=$eosTokenId, stops=$stops")
+        Log.d(TAG, "词汇表加载完成: ${dec.size} 个 token, merges=${ranks.size}, EOS=$eosTokenId, stops=$stops")
     }
 
     // ==================== 编码 ====================
 
     override fun encode(text: String): List<Int> {
         return if (useByteLevel) {
-            encodeByteLevel(text)                       // GPT-2 风格字节级 BPE
+            encodeWithSpecialTokens(text, ::encodeByteLevelSegment) // 特殊 token 必须先整体保留
         } else {
-            encodeSentencePiece(text)                    // SentencePiece 风格
+            encodeWithSpecialTokens(text, ::encodeSentencePieceSegment) // SentencePiece 同样保留特殊 token
         }
     }
 
-    /** GPT-2 风格字节级 BPE 编码 */
-    private fun encodeByteLevel(text: String): List<Int> {
-        val bytes = text.toByteArray(Charsets.UTF_8)    // 文本转 UTF-8 字节
-        val unicodeStr = bytes.map { b ->
-            bytesToUnicode[b.toInt() and 0xFF] ?: '?'   // 字节转 Unicode 字符
-        }.joinToString("")
-        return greedyEncode(unicodeStr)
+    /** 按特殊 token 边界切分普通文本，避免 ChatML 控制符被拆碎 */
+    private fun encodeWithSpecialTokens(
+        text: String,
+        encodePlainText: (String) -> List<Int>
+    ): List<Int> {
+        val result = mutableListOf<Int>()
+        var index = 0
+
+        while (index < text.length) {
+            val matchedAddedToken = addedTokenTexts.firstOrNull { text.startsWith(it, index) }
+            if (matchedAddedToken != null) {
+                addedTokenIds[matchedAddedToken]?.let { result.add(it) } // added token 原样编码为单 ID
+                index += matchedAddedToken.length
+                continue
+            }
+
+            var nextSpecialIndex = text.length
+            for (token in addedTokenTexts) {
+                val found = text.indexOf(token, startIndex = index)
+                if (found >= 0 && found < nextSpecialIndex) nextSpecialIndex = found
+            }
+
+            result += encodePlainText(text.substring(index, nextSpecialIndex))
+            index = nextSpecialIndex
+        }
+
+        return result
     }
 
-    /** SentencePiece 风格编码 */
-    private fun encodeSentencePiece(text: String): List<Int> {
+    /** GPT-2 风格字节级 BPE 编码普通片段 */
+    private fun encodeByteLevelSegment(text: String): List<Int> {
+        val result = mutableListOf<Int>()
+        for (piece in preTokenizeByteLevel(text)) {
+            val unicodeStr = piece.toByteArray(Charsets.UTF_8).map { b ->
+                bytesToUnicode[b.toInt() and 0xFF] ?: '?'       // 字节转 Unicode 字符
+            }.joinToString("")
+            result += encodeBpeToken(unicodeStr)
+        }
+        return result
+    }
+
+    /** SentencePiece 风格编码普通片段 */
+    private fun encodeSentencePieceSegment(text: String): List<Int> {
         val processed = "▁" + text.replace(" ", "▁")    // 空格替换为 ▁
         return greedyEncode(processed)
+    }
+
+    /** ByteLevel + Digits 预分词，贴近 tokenizer.json 中 Sequence(Digits, ByteLevel) */
+    private fun preTokenizeByteLevel(text: String): List<String> {
+        if (text.isEmpty()) return emptyList()
+        val pieces = mutableListOf<String>()
+        byteLevelPattern.findAll(text).forEach { match ->
+            val value = match.value
+            if (value.any { it.isDigit() } && value.all { it.isDigit() || it == ' ' }) {
+                val leadingSpaces = value.takeWhile { it == ' ' }
+                if (leadingSpaces.isNotEmpty()) pieces.add(leadingSpaces) // 数字前空格独立编码为 Ġ
+                value.filter { it.isDigit() }.forEach { pieces.add(it.toString()) }
+            } else {
+                pieces.add(value)
+            }
+        }
+        return pieces
+    }
+
+    /** 对单个 ByteLevel 片段应用 BPE merges，按 rank 从高优先级到低优先级合并 */
+    private fun encodeBpeToken(token: String): List<Int> {
+        bpeCache[token]?.let { return it }
+        if (token.isEmpty()) return emptyList()
+        val directId = encoder[token]
+        if (directId != null) return listOf(directId).also { bpeCache[token] = it }
+
+        var parts = token.map { it.toString() }
+        while (parts.size > 1) {
+            var bestIndex = -1
+            var bestRank = Int.MAX_VALUE
+            for (i in 0 until parts.lastIndex) {
+                val rank = bpeRanks[parts[i] to parts[i + 1]] ?: continue
+                if (rank < bestRank) {
+                    bestRank = rank
+                    bestIndex = i
+                }
+            }
+            if (bestIndex < 0) break
+
+            val merged = mutableListOf<String>()
+            var i = 0
+            while (i < parts.size) {
+                if (i < parts.lastIndex &&
+                    parts[i] == parts[bestIndex] &&
+                    parts[i + 1] == parts[bestIndex + 1]
+                ) {
+                    merged.add(parts[i] + parts[i + 1])         // 同一轮合并所有相同最优 pair
+                    i += 2
+                } else {
+                    merged.add(parts[i])
+                    i++
+                }
+            }
+            parts = merged
+        }
+
+        val encoded = parts.flatMap { part ->
+            encoder[part]?.let { listOf(it) }
+                ?: encodeUnknownByteLevelPart(part)             // 极端缺词时按字符回退，保证不崩溃
+        }
+        bpeCache[token] = encoded
+        return encoded
+    }
+
+    /** ByteLevel 未知片段回退编码，避免 tokenizer.json 异常时整段丢失 */
+    private fun encodeUnknownByteLevelPart(part: String): List<Int> {
+        return part.mapNotNull { ch -> encoder[ch.toString()] }
     }
 
     /** 贪心最长匹配编码（通用） */
@@ -205,17 +353,15 @@ class HFTokenizer(
 
     override fun decode(tokenId: Int): String {
         val tokenStr = decoder[tokenId] ?: return ""
+        if (tokenId in controlTokenIdSet) return ""      // 所有模板控制 token 都不直接显示
+        if (isControlTokenText(tokenStr)) return ""      // 过滤 vocab 内但未登记为 added_token 的角色符
 
-        // 跳过特殊 token 的输出
-        if (tokenStr.startsWith("<") && tokenStr.endsWith(">") && tokenStr.length > 2) {
-            // 字节 token <0xNN> 需要解码
-            if (tokenStr.startsWith("<0x") && tokenStr.length == 6) {
-                val hex = tokenStr.substring(3, 5)
-                return try {
-                    String(byteArrayOf(hex.toInt(16).toByte()), Charsets.UTF_8)
-                } catch (_: Exception) { "" }
-            }
-            return ""                                   // 其他特殊 token 不输出
+        // SentencePiece 字节 token <0xNN> 需要按字节解码
+        if (isByteFallbackToken(tokenStr)) {
+            val hex = tokenStr.substring(3, 5)
+            return try {
+                String(byteArrayOf(hex.toInt(16).toByte()), Charsets.UTF_8)
+            } catch (_: Exception) { "" }
         }
 
         return if (useByteLevel) {
@@ -231,16 +377,41 @@ class HFTokenizer(
             val bytes = mutableListOf<Byte>()
             for (id in tokens) {
                 val tokenStr = decoder[id] ?: continue
-                if (tokenStr.startsWith("<") && tokenStr.endsWith(">")) continue // 跳过特殊 token
+                if (id in controlTokenIdSet) continue    // 跳过控制 token，避免模板符进入 UI
                 for (ch in tokenStr) {
                     val b = unicodeToBytes[ch]
                     if (b != null) bytes.add(b.toByte())
                 }
             }
-            String(bytes.toByteArray(), Charsets.UTF_8)
+            decodeUtf8Bytes(bytes.toByteArray())
         } else {
-            tokens.mapNotNull { decoder[it] }.joinToString("").replace("▁", " ")
+            decodeSentencePieceTokens(tokens)            // SentencePiece 需要合并 <0xNN> 字节回退 token
         }
+    }
+
+    /** SentencePiece 解码：过滤控制符并合并连续 <0xNN> 字节 token */
+    private fun decodeSentencePieceTokens(tokens: List<Int>): String {
+        val text = StringBuilder()
+        val bytes = mutableListOf<Byte>()
+        for (id in tokens) {
+            val tokenStr = decoder[id] ?: continue
+            if (id in controlTokenIdSet || isControlTokenText(tokenStr)) continue
+            if (isByteFallbackToken(tokenStr)) {
+                tokenStr.substring(3, 5).toIntOrNull(16)?.let { bytes.add(it.toByte()) }
+                continue
+            }
+            flushDecodedBytes(bytes, text)
+            text.append(tokenStr.replace("▁", " "))
+        }
+        flushDecodedBytes(bytes, text)
+        return text.toString()
+    }
+
+    /** 将累计字节按 UTF-8 写入输出文本，并清空缓冲 */
+    private fun flushDecodedBytes(bytes: MutableList<Byte>, text: StringBuilder) {
+        if (bytes.isEmpty()) return
+        text.append(decodeUtf8Bytes(bytes.toByteArray()))
+        bytes.clear()
     }
 
     /** GPT-2 字节级解码：Unicode 字符转回字节 */
@@ -249,8 +420,17 @@ class HFTokenizer(
             (unicodeToBytes[ch] ?: ch.code).toByte()
         }.toByteArray()
         return try {
-            String(bytes, Charsets.UTF_8)
+            decodeUtf8Bytes(bytes)
         } catch (_: Exception) { "" }
+    }
+
+    /** UTF-8 解码时忽略尚未完成的多字节片段，避免流式输出出现 � 并触发重复渲染 */
+    private fun decodeUtf8Bytes(bytes: ByteArray): String {
+        return Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.IGNORE)
+            .onUnmappableCharacter(CodingErrorAction.IGNORE)
+            .decode(ByteBuffer.wrap(bytes))
+            .toString()
     }
 
     // ==================== 聊天模板 ====================
@@ -259,6 +439,15 @@ class HFTokenizer(
         return when (chatTemplate) {
             ChatTemplate.CHATML ->                      // SmolLM2, Qwen3, DeepSeek, Phi-3 等
                 "<|im_start|>user\n$userMessage<|im_end|>\n<|im_start|>assistant\n"
+
+            ChatTemplate.QWEN3 ->                       // Qwen3 默认关闭思考块，移动端 UI 只展示最终答复
+                "<|im_start|>user\n$userMessage /no_think<|im_end|>\n<|im_start|>assistant\n"
+
+            ChatTemplate.DEEPSEEK_R1 ->                 // DeepSeek-R1 Distill 官方模板，并预填空 thinking 直接进入正文
+                "<｜begin▁of▁sentence｜><｜User｜>$userMessage<｜Assistant｜><think>\n</think>\n\n"
+
+            ChatTemplate.TINYLLAMA ->                   // TinyLlama Chat 官方模板
+                "<|user|>\n$userMessage</s><|assistant|>\n"
 
             ChatTemplate.LLAMA3 ->                      // Llama 3.2
                 "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n$userMessage<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
@@ -280,6 +469,16 @@ class HFTokenizer(
         @Suppress("UNCHECKED_CAST")
         val pretokenizers = preTokenizer["pretokenizers"] as? List<Map<String, Any>>
         return pretokenizers?.any { (it["type"] as? String) == "ByteLevel" } == true
+    }
+
+    /** 判断 added token 是否为模型模板/多模态/推理控制符 */
+    private fun isControlTokenText(text: String): Boolean {
+        return text.startsWith("<") && text.endsWith(">") && !isByteFallbackToken(text) // 排除 SentencePiece 字节 token
+    }
+
+    /** 判断是否为 SentencePiece 字节回退 token，例如 <0x0A> */
+    private fun isByteFallbackToken(text: String): Boolean {
+        return text.startsWith("<0x") && text.endsWith(">") && text.length == 6
     }
 
     /**

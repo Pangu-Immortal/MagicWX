@@ -2,7 +2,7 @@
  * MainActivity - RWKV 模型交互主界面
  *
  * 功能：
- * - ModelSelectScreen: 模型选择网格（10 个模型卡片）
+ * - ModelSelectScreen: 模型选择网格（仅展示已验证模型卡片）
  * - DownloadScreen: 模型下载进度界面
  * - ChatScreen: 聊天对话界面（消息列表 + 输入框）
  * - LoadingScreen: 模型加载中界面
@@ -13,6 +13,9 @@
 package com.qihao.open.rwkv
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.widget.Toast
 import android.os.Bundle
 import android.os.Build
 import androidx.activity.ComponentActivity
@@ -21,6 +24,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,8 +51,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -111,6 +113,7 @@ fun MainApp(viewModel: MainViewModel = viewModel()) {
     val downloadedModels by viewModel.downloadedModels.collectAsState() // 已下载模型
     val downloadProgress by viewModel.downloadProgress.collectAsState() // 下载进度
     val downloadProgressByModelId by viewModel.downloadProgressByModelId.collectAsState() // 首页模型下载进度
+    val availableStorageBytes by viewModel.availableStorageBytes.collectAsState() // 本机可用存储
     val downloadInfo by viewModel.downloadInfo.collectAsState()     // 下载信息
     val messages by viewModel.messages.collectAsState()             // 聊天消息
     val errorMessage by viewModel.errorMessage.collectAsState()     // 错误信息
@@ -143,6 +146,7 @@ fun MainApp(viewModel: MainViewModel = viewModel()) {
             AppState.MODEL_SELECT -> ModelSelectScreen(
                 downloadedModels = downloadedModels,
                 downloadProgressByModelId = downloadProgressByModelId,
+                availableStorageBytes = availableStorageBytes,
                 onSelectModel = { viewModel.selectModel(it) },
                 onDeleteModel = { viewModel.deleteModel(it) }
             )
@@ -167,6 +171,7 @@ fun MainApp(viewModel: MainViewModel = viewModel()) {
                 onSend = { viewModel.sendMessage(it) },
                 onStop = { viewModel.stopGenerating() },
                 onReset = { viewModel.resetChat() },
+                onRetryLast = { viewModel.retryLastResponse() },
                 onSwitchModel = { viewModel.switchModel() }
             )
             AppState.ERROR -> ErrorScreen(
@@ -187,6 +192,7 @@ fun MainApp(viewModel: MainViewModel = viewModel()) {
 fun ModelSelectScreen(
     downloadedModels: Set<String>,
     downloadProgressByModelId: Map<String, Int>,
+    availableStorageBytes: Long,
     onSelectModel: (ModelInfo) -> Unit,
     onDeleteModel: (String) -> Unit
 ) {
@@ -206,11 +212,9 @@ fun ModelSelectScreen(
                 .padding(padding)
                 .padding(16.dp)
         ) {
-            // 提示文字
-            Text(
-                text = "选择一个模型开始对话",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            // 顶部说明 + 本机剩余容量，便于用户下载大模型前判断空间是否足够
+            StorageHeader(
+                availableStorageBytes = availableStorageBytes,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
 
@@ -231,6 +235,43 @@ fun ModelSelectScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+/** 首页顶部存储提示条 */
+@Composable
+fun StorageHeader(
+    availableStorageBytes: Long,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "选择一个模型开始对话",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Surface(
+            modifier = Modifier.testTag("available-storage-badge"),
+            shape = RoundedCornerShape(9999.dp),
+            color = MaterialTheme.colorScheme.errorContainer
+        ) {
+            Text(
+                text = "本机剩余 ${formatStorageSize(availableStorageBytes)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.error,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+            )
         }
     }
 }
@@ -514,6 +555,23 @@ private fun displayModelSize(modelInfo: ModelInfo): String {
     }
 }
 
+/** 格式化本机存储容量，按 1024 进位自动选择 B/KB/MB/GB/TB */
+private fun formatStorageSize(bytes: Long): String {
+    if (bytes <= 0L) return "未知"                            // 系统读取失败时给出明确兜底文案
+    val units = listOf("B", "KB", "MB", "GB", "TB")
+    var value = bytes.toDouble()
+    var unitIndex = 0
+    while (value >= 1024.0 && unitIndex < units.lastIndex) {
+        value /= 1024.0                                      // 使用二进制容量口径，贴近 Android 存储显示
+        unitIndex++
+    }
+    return if (unitIndex == 0) {
+        "${bytes} B"
+    } else {
+        "%.1f %s".format(value, units[unitIndex])
+    }
+}
+
 /** 格式化模型架构显示 */
 private fun displayModelArch(modelInfo: ModelInfo): String {
     return when (modelInfo.arch) {
@@ -679,10 +737,13 @@ fun ChatScreen(
     onSend: (String) -> Unit,
     onStop: () -> Unit,
     onReset: () -> Unit,
+    onRetryLast: () -> Unit,
     onSwitchModel: () -> Unit
 ) {
     var inputText by remember { mutableStateOf("") }     // 输入框文本
     val listState = rememberLazyListState()               // 列表滚动状态
+    val context = LocalContext.current                     // 当前上下文，用于复制成功提示
+    val clipboardManager = context.getSystemService(ClipboardManager::class.java) // 系统剪贴板
 
     // 新消息时自动滚动到底部
     LaunchedEffect(messages.size) {
@@ -747,7 +808,16 @@ fun ChatScreen(
 
                 // 消息列表
                 items(messages) { message ->
-                    MessageBubble(message = message)
+                    MessageBubble(
+                        message = message,
+                        onCopy = {
+                            clipboardManager.setPrimaryClip(
+                                ClipData.newPlainText("MagicWX 回答", message.content)
+                            )
+                            Toast.makeText(context, "已复制回答", Toast.LENGTH_SHORT).show()
+                        },
+                        onRetry = onRetryLast
+                    )
                 }
             }
 
@@ -813,52 +883,138 @@ fun ChatScreen(
 
 /** 消息气泡 */
 @Composable
-fun MessageBubble(message: ChatMessage) {
+fun MessageBubble(
+    message: ChatMessage,
+    onCopy: () -> Unit,
+    onRetry: () -> Unit
+) {
     val isUser = message.isUser
 
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
-        Box(
+        Column(
             modifier = Modifier
                 .widthIn(max = 280.dp)
-                .clip(
-                    RoundedCornerShape(
-                        topStart = 16.dp,
-                        topEnd = 16.dp,
-                        bottomStart = if (isUser) 16.dp else 4.dp,
-                        bottomEnd = if (isUser) 4.dp else 16.dp
-                    )
-                )
-                .background(
-                    if (isUser) {
-                        MaterialTheme.colorScheme.primary           // 用户消息用主色
-                    } else {
-                        MaterialTheme.colorScheme.secondaryContainer // AI 消息用次色容器
-                    }
-                )
-                .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            if (message.content.isEmpty() && message.isGenerating) {
-                // 生成中占位动画
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-            } else {
-                Text(
-                    text = message.content,
-                    color = if (isUser) {
-                        MaterialTheme.colorScheme.onPrimary              // 用户消息文字色
-                    } else {
-                        MaterialTheme.colorScheme.onSecondaryContainer   // AI 消息文字色
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(
+                        RoundedCornerShape(
+                            topStart = 16.dp,
+                            topEnd = 16.dp,
+                            bottomStart = if (isUser) 16.dp else 4.dp,
+                            bottomEnd = if (isUser) 4.dp else 16.dp
+                        )
+                    )
+                    .background(
+                        if (isUser) {
+                            MaterialTheme.colorScheme.primary           // 用户消息用主色
+                        } else {
+                            MaterialTheme.colorScheme.secondaryContainer // AI 消息用次色容器
+                        }
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                if (message.content.isEmpty() && message.isGenerating) {
+                    // 生成中占位动画
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                } else {
+                    Text(
+                        text = message.content,
+                        color = if (isUser) {
+                            MaterialTheme.colorScheme.onPrimary              // 用户消息文字色
+                        } else {
+                            MaterialTheme.colorScheme.onSecondaryContainer   // AI 消息文字色
+                        },
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+
+            if (!isUser) {
+                // AI 回复底部操作栏：弱化信息层级，接近 ChatGPT 移动端的轻量消息操作区
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = formatDuration(message.durationMillis),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag("message-duration-label")
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AssistActionChip(
+                            text = "复制",
+                            enabled = message.content.isNotBlank(),
+                            modifier = Modifier.testTag("copy-message-button"),
+                            onClick = onCopy
+                        )
+                        AssistActionChip(
+                            text = "重试",
+                            enabled = !message.isGenerating,
+                            modifier = Modifier.testTag("retry-message-button"),
+                            onClick = onRetry
+                        )
+                    }
+                }
             }
         }
+    }
+}
+
+/** AI 消息底部轻量操作胶囊 */
+@Composable
+private fun AssistActionChip(
+    text: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val contentColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+    }
+    Box(
+        modifier = modifier
+            .height(32.dp)
+            .clip(RoundedCornerShape(9999.dp))
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+                shape = RoundedCornerShape(9999.dp)
+            )
+            .clickable(enabled = enabled) { onClick() }
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = contentColor,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+/** 格式化回复耗时，短任务显示毫秒，长任务显示秒 */
+private fun formatDuration(durationMillis: Long): String {
+    return if (durationMillis < 1000L) {
+        "用时 ${durationMillis.coerceAtLeast(0L)} 毫秒"
+    } else {
+        "用时 %.1f 秒".format(durationMillis / 1000f)
     }
 }
 

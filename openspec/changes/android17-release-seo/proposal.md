@@ -4,9 +4,10 @@ MagicWX needs a release-ready Android 17 prototype package and repository metada
 
 ## What Changes
 
-- Upgrade the Android app release identity to `1.1.0` with `versionCode=2`.
+- Upgrade the Android app release identity to `1.1.3` with `versionCode=5`.
 - Target Android 17 / API 37 where the local SDK and Gradle toolchain allow it.
 - Update README and repository-facing wording for prototype accuracy, SEO, and GEO search intent.
+- Add code-level model capability, asset, visibility, and runtime adapter metadata so future LLM, ASR, VAD, TTS, Vision, VLM, and ImageGen models can be gated before public exposure.
 - Produce a GitHub release APK artifact with release notes.
 - Push committed changes and upload the release artifact when local verification passes and GitHub permissions are available.
 

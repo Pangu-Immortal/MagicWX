@@ -76,7 +76,7 @@ class BuiltinExperienceModel : TextGenerationEngine {
             safePrompt.contains("你好") || safePrompt.contains("hello", ignoreCase = true) ->
                 "你好，我是 MagicWX 内置体验模型。当前回复在本机生成，无需下载外部权重。"
             safePrompt.contains("模型") ->
-                "MagicWX 默认内置一个体验模型；RWKV、Qwen、DeepSeek 等大模型需要在模型卡片中下载后再运行。"
+                "MagicWX 默认内置一个体验模型；当前通过验证的外部模型是 Qwen3、Qwen2.5 和 SmolLM2，可在模型卡片中下载后运行。"
             safePrompt.contains("下载") ->
                 "下载大模型时可以返回模型选择页，后台服务会继续下载并通过常驻通知显示进度。"
             else ->

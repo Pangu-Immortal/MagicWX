@@ -363,17 +363,13 @@ class RWKVModel(private val tokenizer: ITokenizer) : TextGenerationEngine {
             LongBuffer.wrap(LongArray(totalSeqLen) { 1L }),
             longArrayOf(1, totalSeqLen.toLong())
         )
-        val posIdsTensor = OnnxTensor.createTensor(
-            env,
-            LongBuffer.wrap(LongArray(seqLen) { (pastSeqLen + it).toLong() }),
-            longArrayOf(1, seqLen.toLong())
-        )
+        val posIdsTensor = createPositionIdsTensor(env, seqLen, pastSeqLen) // 仅模型声明 position_ids 时创建
 
         // 组装 Prefill 输入
         val inputMap = LinkedHashMap<String, OnnxTensor>()
         inputMap["input_ids"] = inputIdsTensor
         inputMap["attention_mask"] = attMaskTensor
-        inputMap["position_ids"] = posIdsTensor
+        if (posIdsTensor != null) inputMap["position_ids"] = posIdsTensor // Gemma 等模型没有 position_ids
         for ((name, tensor) in kvCache) { inputMap[name] = tensor }
 
         Log.d(TAG, "Prefill 推理开始 (seq_len=$seqLen)")
@@ -389,7 +385,7 @@ class RWKVModel(private val tokenizer: ITokenizer) : TextGenerationEngine {
         // 释放 Prefill 输入张量
         inputIdsTensor.close()
         attMaskTensor.close()
-        posIdsTensor.close()
+        posIdsTensor?.close()
 
         // 采样第一个 token
         var nextToken = sampleTopP(logits, temperature, topP)
@@ -397,6 +393,8 @@ class RWKVModel(private val tokenizer: ITokenizer) : TextGenerationEngine {
 
         // === Decode 阶段：逐 token 生成 ===
         val occurrence = mutableMapOf<Int, Float>()
+        val generatedTokens = mutableListOf<Int>()       // Transformer 使用整体解码，避免 ByteLevel 半字符输出
+        var renderedText = ""                            // 已经回调到 UI 的文本前缀
 
         for (step in 0 until maxTokens) {
             if (!coroutineContext.isActive) break
@@ -406,9 +404,17 @@ class RWKVModel(private val tokenizer: ITokenizer) : TextGenerationEngine {
             }
 
             // 解码并回调
-            val text = tokenizer.decode(nextToken)
-            if (text.isNotEmpty()) {
-                withContext(Dispatchers.Main) { onToken(text) }
+            generatedTokens.add(nextToken)
+            val fullText = tokenizer.decode(generatedTokens)
+            val delta = if (fullText.startsWith(renderedText)) {
+                fullText.substring(renderedText.length)        // 只把新增片段推给 UI
+            } else {
+                Log.w(TAG, "Transformer 解码前缀不连续，重置流式输出缓存")
+                fullText
+            }
+            if (delta.isNotEmpty()) {
+                renderedText = fullText
+                withContext(Dispatchers.Main) { onToken(delta) }
             }
 
             occurrence[nextToken] = (occurrence[nextToken] ?: 0f) + 1f
@@ -425,17 +431,13 @@ class RWKVModel(private val tokenizer: ITokenizer) : TextGenerationEngine {
                 LongBuffer.wrap(LongArray(newSeqLen) { 1L }),
                 longArrayOf(1, newSeqLen.toLong())
             )
-            val newPosIds = OnnxTensor.createTensor(
-                env,
-                LongBuffer.wrap(longArrayOf(pastSeqLen.toLong())),
-                longArrayOf(1, 1)
-            )
+            val newPosIds = createPositionIdsTensor(env, 1, pastSeqLen) // 仅模型声明 position_ids 时创建
 
             // 组装 Decode 输入
             val decodeInput = LinkedHashMap<String, OnnxTensor>()
             decodeInput["input_ids"] = newInputIds
             decodeInput["attention_mask"] = newAttMask
-            decodeInput["position_ids"] = newPosIds
+            if (newPosIds != null) decodeInput["position_ids"] = newPosIds // 按模型签名动态传入
             for ((name, tensor) in kvCache) { decodeInput[name] = tensor }
 
             val decodeResult = sess.run(decodeInput)
@@ -448,7 +450,7 @@ class RWKVModel(private val tokenizer: ITokenizer) : TextGenerationEngine {
             // 释放 Decode 输入
             newInputIds.close()
             newAttMask.close()
-            newPosIds.close()
+            newPosIds?.close()
 
             // 应用重复惩罚
             for ((tokenId, count) in occurrence) {
@@ -487,6 +489,13 @@ class RWKVModel(private val tokenizer: ITokenizer) : TextGenerationEngine {
                 FloatArray(0)
             }
         }
+    }
+
+    /** 按模型输入签名创建 position_ids，未声明该输入的模型直接返回 null */
+    private fun createPositionIdsTensor(env: OrtEnvironment, seqLen: Int, startPosition: Int): OnnxTensor? {
+        if (!inputNames.contains("position_ids")) return null
+        val values = LongArray(seqLen) { (startPosition + it).toLong() }
+        return OnnxTensor.createTensor(env, LongBuffer.wrap(values), longArrayOf(1, seqLen.toLong()))
     }
 
     /**

@@ -12,8 +12,8 @@ android {
         applicationId = "com.qihao.open.rwkv"
         minSdk = 24
         targetSdk = 37
-        versionCode = 3
-        versionName = "1.1.1"
+        versionCode = 5
+        versionName = "1.1.3"
     }
 
     buildTypes {
@@ -28,7 +28,7 @@ android {
 
     // 模型文件保持原始格式不压缩，ONNX Runtime 加载必需
     androidResources {
-        noCompress += listOf("tflite", "txt", "json", "ort")
+        noCompress += listOf("onnx", "onnx_data", "task", "tflite", "bin", "ggml", "json", "txt", "ort")
     }
 
     compileOptions {
