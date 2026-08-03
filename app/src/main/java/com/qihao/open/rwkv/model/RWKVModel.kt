@@ -83,6 +83,7 @@ class RWKVModel(private val tokenizer: ITokenizer) : TextGenerationEngine {
 
             Log.d(TAG, "模型输入数量: ${inputNames.size}")
             Log.d(TAG, "模型输出数量: ${outputNames.size}")
+            logModelSignature()                              // 打印输入输出签名，便于核对 RWKV 状态协议
 
             // 检测架构类型：Transformer 有 input_ids 输入
             isTransformer = inputNames.contains("input_ids")
@@ -98,6 +99,18 @@ class RWKVModel(private val tokenizer: ITokenizer) : TextGenerationEngine {
         } catch (e: Exception) {
             Log.e(TAG, "模型加载失败: ${e.message}", e)
             throw e
+        }
+    }
+
+    /** 打印 ONNX 输入输出签名，避免把状态张量误当 logits 或按错状态顺序 */
+    private fun logModelSignature() {
+        inputNames.forEach { name ->
+            val info = session?.inputInfo?.get(name)?.info as? TensorInfo
+            Log.d(TAG, "输入 '$name': shape=${info?.shape?.toList()}, type=${info?.type}")
+        }
+        outputNames.forEach { name ->
+            val info = session?.outputInfo?.get(name)?.info as? TensorInfo
+            Log.d(TAG, "输出 '$name': shape=${info?.shape?.toList()}, type=${info?.type}")
         }
     }
 
@@ -177,8 +190,8 @@ class RWKVModel(private val tokenizer: ITokenizer) : TextGenerationEngine {
         for (i in 1 until inputNames.size) {
             val name = inputNames[i]
             val buff = FloatArray(numLayers * embedDim)
-            // pp_att（注意力惩罚状态）初始化为极小值
-            if (name.contains("pp") || name.contains("att") && i == 1) {
+            // 只有 pp_att（注意力 log-sum-exp 状态）初始化为极小值，其它 RWKV 状态必须保持 0
+            if (name == "pp_att") {
                 Arrays.fill(buff, -1e30f)
             }
             val tensor = OnnxTensor.createTensor(
@@ -256,12 +269,15 @@ class RWKVModel(private val tokenizer: ITokenizer) : TextGenerationEngine {
         val env = environment ?: return
         val sess = session ?: return
 
-        val promptTokens = tokenizer.encode(prompt).toMutableList()
-        Log.d(TAG, "RWKV 输入编码: ${promptTokens.size} 个 token")
+        val formattedPrompt = tokenizer.formatChat(prompt)      // RWKV World 聊天模型需要明确 User/Assistant 模板
+        val promptTokens = tokenizer.encode(formattedPrompt).toMutableList()
+        Log.d(TAG, "RWKV 输入编码: ${promptTokens.size} 个 token (聊天模板后)")
 
         val occurrence = mutableMapOf<Int, Float>()      // 重复惩罚记录
         var nextToken = 0
         val totalSteps = promptTokens.size + maxTokens
+        var generatedTokenCount = 0                       // 已采样 token 数，用于定位空输出问题
+        var emittedTokenCount = 0                         // 已回调到 UI 的 token 数，用于最终验收日志
 
         for (step in 0 until totalSteps) {
             if (!coroutineContext.isActive) break
@@ -317,7 +333,9 @@ class RWKVModel(private val tokenizer: ITokenizer) : TextGenerationEngine {
                 logits[tokenId] -= (0.5f + count * 0.3f)
             }
 
-            nextToken = sampleTopP(logits, temperature, topP)
+            nextToken = sampleTopP(logits, temperature, topP) { tokenId ->
+                isRenderableRwkvToken(tokenId)                  // 避免采到本地 vocab 无法解码的空 token
+            }
             if (nextToken in tokenizer.stopTokenIds) {
                 Log.d(TAG, "RWKV 遇到停止 token: $nextToken")
                 break
@@ -326,11 +344,36 @@ class RWKVModel(private val tokenizer: ITokenizer) : TextGenerationEngine {
             occurrence[nextToken] = (occurrence[nextToken] ?: 0f) + 1f
 
             val text = tokenizer.decode(nextToken)
+            generatedTokenCount++
+            if (generatedTokenCount <= 20) {
+                Log.d(TAG, "RWKV 采样 token[$generatedTokenCount]: id=$nextToken, text='${escapeForLog(text)}'")
+            }
             if (text.isNotEmpty()) {
+                emittedTokenCount++
                 withContext(Dispatchers.Main) { onToken(text) }
+            } else {
+                Log.w(TAG, "RWKV 跳过空解码 token: $nextToken")
             }
         }
-        Log.d(TAG, "RWKV 生成完成")
+        Log.d(TAG, "RWKV 生成完成: sampled=$generatedTokenCount, emitted=$emittedTokenCount")
+    }
+
+    /** 判断 RWKV token 是否适合直接输出，过滤缺失 vocab 和纯不可见控制符 */
+    private fun isRenderableRwkvToken(tokenId: Int): Boolean {
+        val text = tokenizer.decode(tokenId)
+        if (text.isEmpty()) return false                       // 本地 vocab 不包含该 token，不能输出
+        return text.any { char ->
+            !char.isWhitespace() && !char.isISOControl()       // 过滤纯空白 token，保留“空格+词”的正常 token
+        }
+    }
+
+    /** 转义日志中的控制字符，避免不可见 token 干扰调试 */
+    private fun escapeForLog(text: String): String {
+        return text
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+            .take(60)
     }
 
     // ==================== Transformer 生成 ====================
@@ -528,10 +571,18 @@ class RWKVModel(private val tokenizer: ITokenizer) : TextGenerationEngine {
     // ==================== 采样算法 ====================
 
     /** Top-P 核采样 */
-    private fun sampleTopP(logits: FloatArray, temperature: Float, topP: Float): Int {
+    private fun sampleTopP(
+        logits: FloatArray,
+        temperature: Float,
+        topP: Float,
+        tokenFilter: ((Int) -> Boolean)? = null
+    ): Int {
         if (logits.isEmpty()) return 0
         val probs = softmax(logits, temperature)
-        val indices = probs.indices.sortedByDescending { probs[it] }
+        val indices = probs.indices
+            .filter { tokenFilter?.invoke(it) ?: true }        // 按架构过滤不可输出 token
+            .sortedByDescending { probs[it] }
+        if (indices.isEmpty()) return 0                        // 过滤后无候选时回退停止 token
 
         var cumProb = 0f
         var cutoffIdx = indices.size

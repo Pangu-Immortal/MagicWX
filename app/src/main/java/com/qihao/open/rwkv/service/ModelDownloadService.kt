@@ -21,6 +21,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -28,6 +29,7 @@ import com.qihao.open.rwkv.MainActivity
 import com.qihao.open.rwkv.R
 import com.qihao.open.rwkv.model.ModelDownloader
 import com.qihao.open.rwkv.model.ModelRegistry
+import com.qihao.open.rwkv.util.DownloadProgressFormatter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,6 +46,8 @@ class ModelDownloadService : Service() {
         private const val EXTRA_MODEL_ID = "model_id"
         private const val CHANNEL_ID = "model_downloads"
         private const val NOTIFICATION_ID = 1001
+        private const val PROGRESS_UPDATE_BYTES = 1L * 1024L * 1024L
+        private const val PROGRESS_UPDATE_INTERVAL_MS = 2_000L
 
         /** 构造启动模型下载的 Intent */
         fun createStartIntent(context: Context, modelId: String): Intent {
@@ -84,12 +88,23 @@ class ModelDownloadService : Service() {
             )
 
             var lastPercent = -1
+            var lastPublishedBytes = -1L
+            var lastPublishedAt = 0L
             val success = downloader.downloadModel(
                 modelInfo = modelInfo,
                 onProgress = { downloaded, total, percent ->
-                    if (percent != lastPercent) {
+                    val now = SystemClock.elapsedRealtime()
+                    val byteDelta = downloaded - lastPublishedBytes
+                    val timeDelta = now - lastPublishedAt
+                    val shouldPublish = percent != lastPercent ||
+                        byteDelta >= PROGRESS_UPDATE_BYTES ||
+                        timeDelta >= PROGRESS_UPDATE_INTERVAL_MS
+                    if (shouldPublish) {
                         lastPercent = percent
-                        updateNotification(modelInfo.name, percent, formatSize(downloaded, total))
+                        lastPublishedBytes = downloaded
+                        lastPublishedAt = now
+                        val progressText = DownloadProgressFormatter.formatTransferredSize(downloaded, total)
+                        updateNotification(modelInfo.name, percent, progressText)
                         ModelDownloadEvents.publish(
                             ModelDownloadEvent(
                                 modelId = modelId,
@@ -97,7 +112,7 @@ class ModelDownloadService : Service() {
                                 downloadedBytes = downloaded,
                                 totalBytes = total,
                                 percent = percent,
-                                message = formatSize(downloaded, total)
+                                message = progressText
                             )
                         )
                     }
@@ -218,14 +233,4 @@ class ModelDownloadService : Service() {
             PackageManager.PERMISSION_GRANTED
     }
 
-    /** 格式化通知中的下载大小 */
-    private fun formatSize(downloaded: Long, total: Long): String {
-        val dlMB = downloaded / 1024f / 1024f
-        val totalMB = total / 1024f / 1024f
-        return if (totalMB > 1024) {
-            "%.1f GB / %.1f GB".format(dlMB / 1024f, totalMB / 1024f)
-        } else {
-            "%.1f MB / %.1f MB".format(dlMB, totalMB)
-        }
-    }
 }

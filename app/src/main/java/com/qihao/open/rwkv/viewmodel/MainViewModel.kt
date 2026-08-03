@@ -29,6 +29,7 @@ import com.qihao.open.rwkv.model.adapter.RuntimeLoadResult
 import com.qihao.open.rwkv.service.ModelDownloadEventType
 import com.qihao.open.rwkv.service.ModelDownloadEvents
 import com.qihao.open.rwkv.service.ModelDownloadService
+import com.qihao.open.rwkv.util.DownloadProgressFormatter
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -149,6 +150,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _errorMessage.value = modelInfo.unavailableReason.ifBlank {
                 "当前模型需要 ${modelInfo.adapterType} adapter，暂未接入"
             }
+            return
+        }
+
+        val activeProgress = _downloadProgressByModelId.value[modelInfo.id]
+        if (activeProgress != null) {
+            _downloadProgress.value = activeProgress            // 回到下载页时恢复该模型当前百分比
+            if (_downloadInfo.value.isBlank()) {
+                _downloadInfo.value = "正在后台下载..."          // 没收到字节事件时给出明确状态
+            }
+            _appState.value = AppState.DOWNLOADING
             return
         }
 
@@ -392,7 +403,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (event.modelId == selectedId) {
                             _downloadProgress.value = event.percent
                             _downloadInfo.value = event.message.ifEmpty {
-                                formatSize(event.downloadedBytes, event.totalBytes)
+                                DownloadProgressFormatter.formatTransferredSize(
+                                    event.downloadedBytes,
+                                    event.totalBytes
+                                )
                             }
                         }
                     }
@@ -431,17 +445,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val next = _downloadProgressByModelId.value.toMutableMap()
         next.remove(modelId)
         _downloadProgressByModelId.value = next
-    }
-
-    /** 格式化文件大小显示 */
-    private fun formatSize(downloaded: Long, total: Long): String {
-        val dlMB = downloaded / 1024f / 1024f
-        val totalMB = total / 1024f / 1024f
-        return if (totalMB > 1024) {
-            "%.1f GB / %.1f GB".format(dlMB / 1024f, totalMB / 1024f) // GB 显示
-        } else {
-            "%.1f MB / %.1f MB".format(dlMB, totalMB) // MB 显示
-        }
     }
 
     /** 清理模型内部控制文本，避免思考块或模板标记直接显示到聊天 UI */

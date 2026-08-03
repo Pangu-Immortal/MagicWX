@@ -144,6 +144,49 @@ class ModelDownloaderTest {
     }
 
     @Test
+    fun resolveDownloadUrlsKeepsDeclaredSourceBeforeModelScopeFallback() {
+        val filesDir = temporaryFolder.newFolder("files")
+        val downloader = ModelDownloader(filesDir)
+        val urls = downloader.resolveDownloadUrls(
+            originalUrl = "https://hf-mirror.com/test-owner/test-model/resolve/main/model.onnx",
+            mirrorUrls = listOf("https://example.com/model.onnx")
+        )
+
+        assertEquals("https://hf-mirror.com/test-owner/test-model/resolve/main/model.onnx", urls[0])
+        assertEquals("https://modelscope.cn/models/test-owner/test-model/resolve/main/model.onnx", urls[1])
+        assertEquals("https://example.com/model.onnx", urls[2])
+    }
+
+    @Test
+    fun resolveDownloadUrlsDoesNotConvertOfficialHuggingFaceToModelScope() {
+        val filesDir = temporaryFolder.newFolder("files")
+        val downloader = ModelDownloader(filesDir)
+        val urls = downloader.resolveDownloadUrls(
+            originalUrl = "https://huggingface.co/test-owner/test-model/resolve/main/model.onnx"
+        )
+
+        assertEquals(listOf("https://huggingface.co/test-owner/test-model/resolve/main/model.onnx"), urls)
+    }
+
+    @Test
+    fun rwkvModelDeclaresMultipleDownloadSources() {
+        val rwkv = ModelRegistry.models.first { it.id == "rwkv7-world-0.4b" }
+        val urls = listOf(rwkv.downloadUrl) + rwkv.mirrorUrls
+
+        assertTrue("RWKV 必须保留官方 HuggingFace 源", urls.any { it.startsWith("https://huggingface.co/") })
+        assertTrue("RWKV 必须保留 GitHub Release 备用源", urls.any { it.startsWith("https://github.com/") })
+        assertTrue("RWKV 必须保留 hf-mirror 备用源", urls.any { it.startsWith("https://hf-mirror.com/") })
+    }
+
+    @Test
+    fun resolvedAssetsKeepLegacyMirrorUrls() {
+        val rwkv = ModelRegistry.models.first { it.id == "rwkv7-world-0.4b" }
+        val mainAsset = rwkv.resolvedAssets().first { it.kind == ModelAssetKind.MODEL }
+
+        assertEquals(rwkv.mirrorUrls, mainAsset.mirrorUrls)
+    }
+
+    @Test
     fun explicitNonTextAssetsReady_whenAdapterAvailableAndRequiredFilesExist() {
         val filesDir = temporaryFolder.newFolder("files")
         val downloader = ModelDownloader(filesDir)

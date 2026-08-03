@@ -356,11 +356,11 @@ class ModelDownloader private constructor(
                 return@withContext true
             }
 
-            Log.d(TAG, "开始下载模型: ${modelInfo.id} → ${buildMirrorUrls(modelInfo.downloadUrl)}")
+            Log.d(TAG, "开始下载模型: ${modelInfo.id} → ${resolveDownloadUrls(modelInfo.downloadUrl, modelInfo.mirrorUrls)}")
 
             // ---- 第一阶段：下载主模型文件 ----
             val mainSuccess = downloadFirstAvailableFile(
-                urls = buildMirrorUrls(modelInfo.downloadUrl),
+                urls = resolveDownloadUrls(modelInfo.downloadUrl, modelInfo.mirrorUrls),
                 targetFile = targetFile,
                 onStatus = onStatus,
                 onProgress = onProgress                        // 直接透传进度
@@ -380,7 +380,7 @@ class ModelDownloader private constructor(
             val mainFileSize = targetFile.length()             // 主文件大小
 
             val dataSuccess = downloadFirstAvailableFile(
-                urls = buildMirrorUrls(dataUrl),
+                urls = resolveDownloadUrls(dataUrl),
                 targetFile = dataTargetFile,
                 optional = true,                               // 可选文件，404不算失败
                 onStatus = onStatus,
@@ -411,7 +411,7 @@ class ModelDownloader private constructor(
                 if (!hasReadyTokenizer(modelInfo.id)) {
                     Log.d(TAG, "下载分词器: tokenizer.json")
                     val tokenizerSuccess = downloadFirstAvailableFile(
-                        urls = buildMirrorUrls(modelInfo.tokenizerUrl),
+                        urls = resolveDownloadUrls(modelInfo.tokenizerUrl),
                         targetFile = tokenizerFile,
                         optional = false,                // Transformer 分词器是必需资产
                         onStatus = onStatus
@@ -468,7 +468,7 @@ class ModelDownloader private constructor(
 
             onStatus?.invoke("正在下载资产 ${index + 1}/${assets.size}: ${asset.filename}")
             val success = downloadFirstAvailableFile(
-                urls = buildMirrorUrls(asset.url),
+                urls = resolveDownloadUrls(asset.url, asset.mirrorUrls),
                 targetFile = targetFile,
                 optional = !asset.required,
                 onStatus = onStatus,
@@ -525,23 +525,24 @@ class ModelDownloader private constructor(
         return false
     }
 
-    /** 根据原始 URL 生成下载候选源，国内网络优先使用 ModelScope */
-    private fun buildMirrorUrls(originalUrl: String): List<String> {
+    /** 根据原始 URL 和手工备用源生成候选源，原始源优先，避免无效 ModelScope 404 抢跑 */
+    internal fun resolveDownloadUrls(originalUrl: String, mirrorUrls: List<String> = emptyList()): List<String> {
         if (originalUrl.isBlank()) return emptyList()
         val urls = linkedSetOf<String>()
-        val modelScopeUrl = toModelScopeUrl(originalUrl)
-        if (modelScopeUrl != null) urls += modelScopeUrl        // 国内优先：ModelScope 同路径直链
-        urls += originalUrl                                     // 原始源作为兜底
+        val declaredUrls = listOf(originalUrl) + mirrorUrls     // 手工声明顺序是最可信的下载顺序
+        declaredUrls.forEach { declaredUrl ->
+            if (declaredUrl.isNotBlank()) urls += declaredUrl   // 先尝试真实声明源，避免自动镜像误判
+            val modelScopeUrl = toModelScopeUrl(declaredUrl)
+            if (modelScopeUrl != null) urls += modelScopeUrl    // ModelScope 仅作为备用源，不抢首位
+        }
         return urls.toList()
     }
 
-    /** 将 HuggingFace / hf-mirror 路径转换为 ModelScope 同路径直链 */
+    /** 将 hf-mirror 路径转换为 ModelScope 同路径直链；官方 HuggingFace 不机械转换，避免 RWKV 误打 404 */
     private fun toModelScopeUrl(url: String): String? {
         return when {
             url.startsWith("https://hf-mirror.com/") ->
                 url.replace("https://hf-mirror.com/", "https://modelscope.cn/models/")
-            url.startsWith("https://huggingface.co/") ->
-                url.replace("https://huggingface.co/", "https://modelscope.cn/models/")
             else -> null
         }
     }
@@ -735,9 +736,6 @@ class ModelDownloader private constructor(
                 conn.disconnect()
                 if (location != null) {
                     url = URL(url, location)                   // 支持相对和绝对 URL
-                    if (shouldBlockRedirect(urlStr, url.toString())) {
-                        throw RuntimeException("镜像源重定向到不可用 HuggingFace: $url")
-                    }
                     redirectCount++
                     Log.d(TAG, "重定向到: $url")
                     continue
@@ -748,12 +746,6 @@ class ModelDownloader private constructor(
         }
 
         throw RuntimeException("重定向次数过多 (>10)")
-    }
-
-    /** 阻止 hf-mirror 继续跳到 HuggingFace，避免手机网络反复 30 秒超时 */
-    private fun shouldBlockRedirect(originalUrl: String, redirectedUrl: String): Boolean {
-        return originalUrl.startsWith("https://hf-mirror.com/") &&
-            redirectedUrl.startsWith("https://huggingface.co/")
     }
 
     /** 根据原始下载源返回连接超时，镜像源快切，GitHub Release 单源放宽 */

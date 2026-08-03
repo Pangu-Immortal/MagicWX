@@ -78,6 +78,7 @@ enum class ModelAssetKind {
 data class ModelAsset(
     val filename: String,                                  // 本地保存文件名
     val url: String,                                       // 下载地址
+    val mirrorUrls: List<String> = emptyList(),             // 同一资产的备用下载地址，失败时按顺序切换
     val required: Boolean = true,                          // 是否为加载必需资产
     val kind: ModelAssetKind = ModelAssetKind.OTHER        // 资产类型
 )
@@ -91,6 +92,7 @@ data class ModelAsset(
  * @param paramSize 参数量描述（如 "0.4B"）
  * @param quantization 量化方式（如 "INT8"、"INT4"）
  * @param downloadUrl 模型下载地址（国内可访问）
+ * @param mirrorUrls 模型主文件备用下载地址，按顺序失败切换
  * @param fileSizeMB 预估文件大小（MB）
  * @param isFullySupported 是否完全支持（当前仅内置体验模型为 true）
  * @param tokenizerUrl 分词器 tokenizer.json 下载地址（Transformer 模型必需，RWKV 为 null）
@@ -111,6 +113,7 @@ data class ModelInfo(
     val paramSize: String,       // 参数量
     val quantization: String,    // 量化方式
     val downloadUrl: String,     // 下载地址
+    val mirrorUrls: List<String> = emptyList(), // 备用下载地址
     val fileSizeMB: Int,         // 预估大小 MB
     val isFullySupported: Boolean, // 是否完全支持
     val tokenizerUrl: String? = null,      // 分词器下载地址（仅 Transformer 模型）
@@ -131,6 +134,7 @@ data class ModelInfo(
             resolved += ModelAsset(
                 filename = filenameFromUrl(downloadUrl, "model.onnx"),
                 url = downloadUrl,
+                mirrorUrls = mirrorUrls,
                 kind = if (downloadUrl.endsWith(".task")) ModelAssetKind.TASK else ModelAssetKind.MODEL
             )
         }
@@ -198,7 +202,11 @@ object ModelRegistry {
             arch = ModelArch.RWKV,
             paramSize = "0.4B",
             quantization = "FP32",
-            downloadUrl = "https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/model.onnx",
+            downloadUrl = "https://huggingface.co/TIEMING/rwkv-world-0.4B-onnx/resolve/main/model.onnx",
+            mirrorUrls = listOf(
+                "https://hf-mirror.com/TIEMING/rwkv-world-0.4B-onnx/resolve/main/model.onnx",
+                "https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/model.onnx"
+            ),
             fileSizeMB = 1572,
             isFullySupported = true,
             tokenizerUrl = null,

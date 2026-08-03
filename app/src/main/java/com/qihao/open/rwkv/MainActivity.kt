@@ -120,18 +120,15 @@ fun MainApp(viewModel: MainViewModel = viewModel()) {
     val isGenerating by viewModel.isGenerating.collectAsState()     // 是否生成中
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) {
-        viewModel.downloadModel()                              // 权限结果不阻断下载，前台服务仍会展示系统级任务状态
-    }
+    ) { }                                                      // 权限回调不再启动下载，避免重复触发服务
 
     val startDownloadWithNotificationPrompt = {
+        viewModel.downloadModel()                              // 先启动前台下载，权限弹窗不阻断用户点击
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            viewModel.downloadModel()
         }
     }
 
@@ -361,7 +358,7 @@ fun ModelCard(
                 // 状态标签
                 if (isDownloading) {
                     Text(
-                        text = "下载中 ${downloadProgress}%",
+                        text = displayDownloadStatus(downloadProgress),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
@@ -408,14 +405,24 @@ fun ModelCard(
             if (isDownloading) {
                 Spacer(modifier = Modifier.height(8.dp))
                 // 首页实时下载进度条，后台下载时也保持可见
-                LinearProgressIndicator(
-                    progress = { downloadProgress.coerceIn(0, 100) / 100f },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .testTag("model-download-progress-${modelInfo.id}")
-                )
+                if (downloadProgress > 0) {
+                    LinearProgressIndicator(
+                        progress = { downloadProgress.coerceIn(0, 100) / 100f },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .testTag("model-download-progress-${modelInfo.id}")
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .testTag("model-download-progress-${modelInfo.id}")
+                    )
+                }
             }
         }
     }
@@ -545,6 +552,17 @@ fun InfoRow(label: String, value: String) {
     }
 }
 
+/** 格式化首页模型下载状态，0% 阶段不再误导为卡死 */
+private fun displayDownloadStatus(progress: Int): String {
+    return if (progress > 0) "下载中 $progress%" else "下载中"
+}
+
+/** 格式化下载页百分比，已有字节但不足 1% 时显示 <1% */
+private fun displayDownloadPercent(progress: Int, info: String): String {
+    val hasTransferredBytes = info.contains(" MB /") || info.contains(" GB /")
+    return if (progress == 0 && hasTransferredBytes) "<1%" else "$progress%"
+}
+
 /** 格式化模型大小显示 */
 private fun displayModelSize(modelInfo: ModelInfo): String {
     if (modelInfo.arch == ModelArch.BUILTIN) return "内置"      // 内置体验模型不占外部下载空间
@@ -623,7 +641,7 @@ fun DownloadingScreen(
 
             // 进度百分比
             Text(
-                text = "$progress%",
+                text = displayDownloadPercent(progress, info),
                 style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
@@ -632,13 +650,22 @@ fun DownloadingScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // 进度条
-            LinearProgressIndicator(
-                progress = { progress / 100f },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp)),
-            )
+            if (progress > 0) {
+                LinearProgressIndicator(
+                    progress = { progress / 100f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                )
+            } else {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                )
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
 

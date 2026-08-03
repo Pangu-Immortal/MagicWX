@@ -59,7 +59,7 @@ The app currently exposes only models that passed device validation. The built-i
 | Model | Architecture | Download status | Runtime status |
 |---|---|---|---|
 | MagicWX built-in experience | Built-in | Bundled in code | Verified on device for first-run chat |
-| RWKV-7 World 0.4B | RWKV | GitHub Release model package | Required visible model; user-validated as the best current mobile model |
+| RWKV-7 World 0.4B | RWKV | Verified full download on Samsung test device via HF mirror fallback | Verified ONNX load and `hello` chat response |
 | Qwen3 0.6B | Transformer | Verified full download on Samsung test device | Verified `hello` chat response |
 | Qwen2.5 0.5B | Transformer | Verified full download on Samsung test device | Verified `hello` chat response |
 | SmolLM2 360M | Transformer | Verified full download on Samsung test device | Verified `hello` chat response |
@@ -113,7 +113,7 @@ Primary sources used for this queue include Hugging Face model APIs, Google AI E
 
 ## Download Behavior
 
-External model downloads run in a user-started `dataSync` foreground service. Users can tap “后台下载，返回模型选择” to leave the download page; the active model card shows “下载中 xx%” and a progress bar while the service continues. The downloader keeps `.downloading` temporary files for resume, validates short reads before renaming, and requires tokenizer and `_data` assets when the model package needs them.
+External model downloads run in a user-started `dataSync` foreground service. Users can tap “后台下载，返回模型选择” to leave the download page; the active model card shows “下载中 xx%” and a progress bar while the service continues. The downloader keeps `.downloading` temporary files for resume, validates short reads before renaming, and requires tokenizer and `_data` assets when the model package needs them. RWKV uses ordered fallback sources: Hugging Face official URL, hf-mirror, then the GitHub Release asset.
 
 ## Android 17 Notes
 
