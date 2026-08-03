@@ -12,8 +12,8 @@ android {
         applicationId = "com.qihao.open.rwkv"
         minSdk = 24
         targetSdk = 37
-        versionCode = 6
-        versionName = "1.1.4"
+        versionCode = 7
+        versionName = "1.1.5"
     }
 
     buildTypes {
@@ -73,6 +73,9 @@ dependencies {
 
     // ONNX Runtime 模型推理
     implementation(libs.onnxruntime.android)
+
+    // MediaPipe LLM Inference，用于加载 .task / LiteRT 端侧大模型包
+    implementation(libs.mediapipe.tasks.genai)
 
     // JSON 序列化
     implementation(libs.gson)

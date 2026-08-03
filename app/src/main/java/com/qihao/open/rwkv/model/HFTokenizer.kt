@@ -21,6 +21,7 @@ import java.io.File
 
 /** 聊天模板类型 */
 enum class ChatTemplate {
+    PLAIN,      // 无官方聊天模板的 base / 移动端小模型，直接输入用户文本
     CHATML,     // SmolLM2, DeepSeek, Phi-3, TinyLlama, StableLM, MiniCPM
     QWEN3,      // Qwen3，默认追加 /no_think，避免普通聊天暴露推理块
     DEEPSEEK_R1, // DeepSeek-R1 Distill，使用官方 <｜User｜>/<｜Assistant｜> 模板
@@ -155,7 +156,9 @@ class HFTokenizer(
         // ---- 检测是否使用字节级 BPE ----
         @Suppress("UNCHECKED_CAST")
         val preTokenizer = root["pre_tokenizer"] as? Map<String, Any>
-        useByteLevel = detectByteLevel(preTokenizer) || enc.containsKey("Ġ") // Ġ 是 GPT-2 空格字符
+        @Suppress("UNCHECKED_CAST")
+        val decoderConfig = root["decoder"] as? Map<String, Any>
+        useByteLevel = detectByteLevel(preTokenizer, decoderConfig) // 只按 tokenizer 结构判断，避免 Gemma 误判 ByteLevel
         Log.d(TAG, "使用字节级 BPE: $useByteLevel")
 
         // ---- 构建 GPT-2 字节到 Unicode 映射 ----
@@ -437,6 +440,8 @@ class HFTokenizer(
 
     override fun formatChat(userMessage: String): String {
         return when (chatTemplate) {
+            ChatTemplate.PLAIN -> userMessage           // 无模板模型不能强行注入 ChatML 控制符
+
             ChatTemplate.CHATML ->                      // SmolLM2, Qwen3, DeepSeek, Phi-3 等
                 "<|im_start|>user\n$userMessage<|im_end|>\n<|im_start|>assistant\n"
 
@@ -460,7 +465,8 @@ class HFTokenizer(
     // ==================== 工具方法 ====================
 
     /** 检测 pre_tokenizer 是否包含 ByteLevel */
-    private fun detectByteLevel(preTokenizer: Map<String, Any>?): Boolean {
+    private fun detectByteLevel(preTokenizer: Map<String, Any>?, decoderConfig: Map<String, Any>?): Boolean {
+        if (usesSentencePieceStyleDecoder(decoderConfig)) return false // Gemma BPE 用 ▁ 空格替换，不是 GPT-2 ByteLevel
         if (preTokenizer == null) return false
         val type = preTokenizer["type"] as? String ?: ""
         if (type == "ByteLevel") return true
@@ -469,6 +475,13 @@ class HFTokenizer(
         @Suppress("UNCHECKED_CAST")
         val pretokenizers = preTokenizer["pretokenizers"] as? List<Map<String, Any>>
         return pretokenizers?.any { (it["type"] as? String) == "ByteLevel" } == true
+    }
+
+    /** 判断 decoder 是否为 SentencePiece/Gemma 风格：用 ▁ 表示空格，再做 ByteFallback 融合 */
+    private fun usesSentencePieceStyleDecoder(decoderConfig: Map<String, Any>?): Boolean {
+        if (decoderConfig == null) return false
+        if (decoderConfig.toString().contains("▁")) return true // tokenizer.json 声明了 ▁ 空格恢复规则
+        return false
     }
 
     /** 判断 added token 是否为模型模板/多模态/推理控制符 */

@@ -525,17 +525,34 @@ class ModelDownloader private constructor(
         return false
     }
 
-    /** 根据原始 URL 和手工备用源生成候选源，原始源优先，避免无效 ModelScope 404 抢跑 */
+    /** 根据原始 URL 和手工备用源生成候选源，原始源优先，自动补充国内可访问镜像 */
     internal fun resolveDownloadUrls(originalUrl: String, mirrorUrls: List<String> = emptyList()): List<String> {
         if (originalUrl.isBlank()) return emptyList()
         val urls = linkedSetOf<String>()
         val declaredUrls = listOf(originalUrl) + mirrorUrls     // 手工声明顺序是最可信的下载顺序
         declaredUrls.forEach { declaredUrl ->
-            if (declaredUrl.isNotBlank()) urls += declaredUrl   // 先尝试真实声明源，避免自动镜像误判
-            val modelScopeUrl = toModelScopeUrl(declaredUrl)
-            if (modelScopeUrl != null) urls += modelScopeUrl    // ModelScope 仅作为备用源，不抢首位
+            addDownloadUrlWithFallbacks(urls, declaredUrl)      // 每个声明源都追加可推导备用源
         }
         return urls.toList()
+    }
+
+    /** 添加单个源及其可推导备用源，保证 tokenizer 等伴随文件也能自动切镜像 */
+    private fun addDownloadUrlWithFallbacks(urls: LinkedHashSet<String>, declaredUrl: String) {
+        if (declaredUrl.isBlank()) return
+        urls += declaredUrl                                    // 先尝试真实声明源，保留官方 URL 优先级
+        val hfMirrorUrl = toHfMirrorUrl(declaredUrl)
+        if (hfMirrorUrl != null) urls += hfMirrorUrl            // 官方 HuggingFace 失败时自动切 hf-mirror
+        val modelScopeUrl = toModelScopeUrl(hfMirrorUrl ?: declaredUrl)
+        if (modelScopeUrl != null) urls += modelScopeUrl        // ModelScope 仅作为最后兜底，不抢首位
+    }
+
+    /** 将官方 HuggingFace resolve 直链转换为 hf-mirror 同路径直链 */
+    private fun toHfMirrorUrl(url: String): String? {
+        return when {
+            url.startsWith("https://huggingface.co/") ->
+                url.replace("https://huggingface.co/", "https://hf-mirror.com/")
+            else -> null
+        }
     }
 
     /** 将 hf-mirror 路径转换为 ModelScope 同路径直链；官方 HuggingFace 不机械转换，避免 RWKV 误打 404 */

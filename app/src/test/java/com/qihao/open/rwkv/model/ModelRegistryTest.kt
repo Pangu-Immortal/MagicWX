@@ -24,7 +24,8 @@ class ModelRegistryTest {
             "rwkv7-world-0.4b",
             "qwen3-0.6b",
             "qwen25-0.5b",
-            "smollm2-360m"
+            "smollm2-360m",
+            "tinyllama-1.1b-task"
         )
         private val DISABLED_MODEL_IDS = setOf(
             "deepseek-r1-1.5b",
@@ -56,12 +57,15 @@ class ModelRegistryTest {
     }
 
     @Test
-    fun transformerModelsDeclareTokenizerUrl() {
-        val transformerModels = ModelRegistry.models.filter { it.arch == ModelArch.TRANSFORMER }
+    fun onnxTransformerModelsDeclareTokenizerUrl() {
+        val transformerModels = ModelRegistry.models.filter {
+            it.arch == ModelArch.TRANSFORMER &&
+                it.adapterType == RuntimeAdapterType.ONNX_TEXT_GENERATION
+        }
 
         assertTrue(transformerModels.isNotEmpty())
         transformerModels.forEach { modelInfo ->
-            assertNotNull("Transformer 模型缺少 tokenizerUrl: ${modelInfo.id}", modelInfo.tokenizerUrl)
+            assertNotNull("ONNX Transformer 模型缺少 tokenizerUrl: ${modelInfo.id}", modelInfo.tokenizerUrl)
         }
     }
 

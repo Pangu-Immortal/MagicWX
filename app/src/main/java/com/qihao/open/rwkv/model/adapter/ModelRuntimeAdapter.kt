@@ -127,6 +127,13 @@ object ModelRuntimeAdapterFactory {
                     UnsupportedRuntimeAdapter(modelInfo.adapterType, modelInfo.unavailableReason)
                 }
             }
+            RuntimeAdapterType.LITERT_LM -> {
+                if (modelInfo.adapterAvailable) {
+                    MediaPipeLlmAdapter()
+                } else {
+                    UnsupportedRuntimeAdapter(modelInfo.adapterType, modelInfo.unavailableReason)
+                }
+            }
             else -> UnsupportedRuntimeAdapter(modelInfo.adapterType, modelInfo.unavailableReason)
         }
     }

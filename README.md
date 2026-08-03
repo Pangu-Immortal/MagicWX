@@ -1,18 +1,19 @@
 # MagicWX
 
-MagicWX is an Android 17 local LLM inference prototype built with Kotlin, Jetpack Compose, Material3, and ONNX Runtime Android. It focuses on offline AI model selection, verified local model package checks, and a simple on-device chat flow.
+MagicWX is an Android 17 local LLM inference prototype built with Kotlin, Jetpack Compose, Material3, ONNX Runtime Android, and MediaPipe LLM Inference. It focuses on offline AI model selection, verified local model package checks, runtime-specific loading, and a simple on-device chat flow.
 
-Keywords: Android local LLM, Android 17 AI app, Jetpack Compose AI chat, ONNX Runtime Android, offline LLM prototype, Qwen Android, SmolLM2 Android, local AI inference, 端侧大模型, 安卓离线 AI, 本地大模型推理.
+Keywords: Android local LLM, Android 17 AI app, Jetpack Compose AI chat, ONNX Runtime Android, MediaPipe LLM Android, LiteRT LLM, offline LLM prototype, RWKV Android, TinyLlama Android, Qwen Android, SmolLM2 Android, local AI inference, 端侧大模型, 安卓离线 AI, 本地大模型推理.
 
 ## Current Status
 
 - Android app prototype: available.
-- Latest prototype release: `v1.1.4`.
+- Latest prototype release: `v1.1.5`.
 - Android target: API 37 / Android 17.
 - Verified production-ready models: none yet.
 - Verified first-run path: built-in MagicWX experience model, no external download required.
-- Runtime adapters in code: `BUILTIN_TEXT` and `ONNX_TEXT_GENERATION` are implemented; ASR, VAD, TTS, Vision, VLM, LiteRT, MediaPipe, Piper, sherpa-onnx, NCNN, and MNN remain gated candidates.
+- Runtime adapters in code: `BUILTIN_TEXT`, `ONNX_TEXT_GENERATION`, and `LITERT_LM` via MediaPipe LLM Inference are implemented; llama.cpp/GGUF, MLC LLM, MNN-LLM, ASR, VAD, TTS, Vision, VLM, Piper, sherpa-onnx, NCNN, and diffusion pipelines remain gated candidates.
 - ONNX path in code: local text generation prototype with verified Transformer downloads and adapter-based loading.
+- LiteRT path in code: `.task` model packages load through MediaPipe LLM Inference and are validated independently from ONNX.
 - Background downloads: user-started foreground service with persistent progress notification and model-card progress state.
 - Transformer entries: experimental candidates that require model-specific tokenizer, input/output, dry-run, and golden-output validation before public support claims.
 - Multimodal scope: LLM, ASR, VAD, TTS, image understanding, VLM, and image generation candidates are tracked separately because each modality needs its own runtime pipeline.
@@ -40,7 +41,8 @@ com.qihao.open.rwkv/
 │   ├── ModelInfo.kt          # Registered model metadata
 │   ├── ModelDownloader.kt    # Download and local package checks
 │   └── adapter/
-│       └── ModelRuntimeAdapter.kt # Runtime adapter dispatch and load gates
+│       ├── ModelRuntimeAdapter.kt # Runtime adapter dispatch and load gates
+│       └── MediaPipeLlmAdapter.kt # MediaPipe/LiteRT .task text runtime
 ├── service/
 │   ├── ModelDownloadService.kt # Foreground model download service
 │   └── ModelDownloadEvents.kt  # In-process download progress events
@@ -63,8 +65,9 @@ The app currently exposes only models that passed device validation. The built-i
 | Qwen3 0.6B | Transformer | Verified full download on Samsung test device | Verified `hello` chat response |
 | Qwen2.5 0.5B | Transformer | Verified full download on Samsung test device | Verified `hello` chat response |
 | SmolLM2 360M | Transformer | Verified full download on Samsung test device | Verified `hello` chat response |
+| TinyLlama 1.1B Chat LiteRT | Transformer | Verified 1.1GB `.task` download on Samsung test device via HF mirror fallback | Verified MediaPipe/LiteRT load and `hello` response in 4.8s |
 
-DeepSeek-R1, Gemma 3, Phi-3, Llama 3.2, TinyLlama, StableLM 2, MiniCPM, Qwen2 0.5B, SmolLM2 135M, and SmolLM2 135M MHA are intentionally hidden until they can pass the same validation bar.
+DeepSeek-R1, Gemma 3 ONNX, Phi-3, Llama 3.2 ONNX, TinyLlama ONNX, StableLM 2, MiniCPM, Qwen2 0.5B, SmolLM2 135M, and SmolLM2 135M MHA are intentionally hidden until they can pass the same validation bar.
 
 ## Mobile Model Candidate Pool
 
@@ -76,12 +79,19 @@ This catalog is a research and implementation queue, not a support claim. Only t
 | LLM | RWKV-7 World 0.4B | ONNX + bundled RWKV vocab | Verified; required visible model |
 | LLM | Qwen2.5 0.5B ONNX | ONNX q4f16 + tokenizer | Verified |
 | LLM | SmolLM2 360M ONNX | ONNX q4f16 + tokenizer | Verified |
+| LLM | TinyLlama 1.1B Chat LiteRT | MediaPipe/LiteRT `.task` | Verified download, load, and `hello` response |
 | LLM | Qwen2 0.5B ONNX | ONNX q4f16 + tokenizer | Hidden: garbled output |
 | LLM | SmolLM2 135M ONNX | ONNX q4f16 + tokenizer | Hidden: abnormal output |
 | LLM | SmolLM2 135M MHA ONNX | ONNX q4f16 + tokenizer | Hidden: ORT shape mismatch |
-| LLM | MobileLLM 125M / 350M | ONNX, custom-code lineage | Direct candidate; needs tokenizer contract test |
-| LLM | Gemma 3 270M / 1B ONNX | ONNX + external data assets | Adapter/package manifest required |
+| LLM | MobileLLM 125M / 350M | ONNX, custom-code lineage | 125M hidden for webpage-fragment output; 350M remains candidate |
+| LLM | Gemma 3 270M / 1B ONNX | ONNX + external data assets | 270M hidden for repeated-fragment output; 1B remains candidate |
 | LLM | Llama 3.2 1B ONNX | ONNX + tokenizer | Direct candidate; license/runtime validation required |
+| LLM | Llama 3.2 1B GGUF | llama.cpp / GGUF | Candidate; needs native llama.cpp adapter |
+| LLM | Llama 3.2 1B Uncensored GGUF | llama.cpp / GGUF | Candidate; public non-gated source checked; test only with normal `hello` |
+| LLM | Creative Writing RP 1B GGUF | llama.cpp / GGUF | Candidate; public non-gated source checked; test only with normal `hello` |
+| LLM | Triangulum 1B Roleplay GGUF | llama.cpp / GGUF | Candidate; public non-gated source checked; test only with normal `hello` |
+| LLM | Uyara Companion 1.5B GGUF | llama.cpp / GGUF | Candidate; public non-gated source checked; emotional-companion direction |
+| LLM | TinyLlama 1.1B Chat MNN | MNN-LLM | Candidate; requires MNN-LLM runtime and multi-file asset manifest |
 | LLM | DeepSeek-R1 Distill Qwen 1.5B ONNX | ONNX + tokenizer | Direct candidate; larger memory budget |
 | LLM | Phi-3 Mini 4K ONNX | ONNX + tokenizer | Adapter/package manifest required |
 | LLM | Gemma3-1B-IT `.task` | Google AI Edge LiteRT-LM | Adapter required |
@@ -117,7 +127,7 @@ External model downloads run in a user-started `dataSync` foreground service. Us
 
 ## Android 17 Notes
 
-The `v1.1.4` prototype targets Android 17 / API 37. Current code does not use local-network discovery, SMS/OTP APIs, custom notifications, or fixed-orientation constraints, so the Android 17 adaptation is focused on SDK targeting, backup safety, edge-to-edge Compose screens, adapter-gated model loading, and release verification.
+The `v1.1.5` prototype targets Android 17 / API 37. Current code does not use local-network discovery, SMS/OTP APIs, custom notifications, or fixed-orientation constraints, so the Android 17 adaptation is focused on SDK targeting, backup safety, edge-to-edge Compose screens, adapter-gated model loading, and release verification.
 
 Large-screen, foldable, and tablet behavior still needs real-device validation before production claims. Model correctness also requires per-model package manifests, tokenizer parity checks, fixed-input dry-runs, and device logs.
 

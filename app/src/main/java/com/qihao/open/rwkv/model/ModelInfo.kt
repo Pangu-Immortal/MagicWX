@@ -45,6 +45,9 @@ enum class RuntimeAdapterType {
     WHISPER_CPP,           // whisper.cpp adapter（待接入）
     PIPER,                 // Piper TTS adapter（待接入）
     SHERPA_ONNX,           // sherpa-onnx adapter（待接入）
+    LLAMA_CPP,             // llama.cpp / GGUF adapter（待接入）
+    MLC_LLM,               // MLC LLM adapter（待接入）
+    MNN_LLM,               // MNN LLM adapter（待接入）
     VOSK,                  // Vosk ASR adapter（待接入）
     NCNN,                  // NCNN adapter（待接入）
     MNN,                   // MNN adapter（待接入）
@@ -174,8 +177,8 @@ object ModelRegistry {
      * 2. 可正常加载进入对话页
      * 3. 使用基础测试词 hello 可输出自然回复
      *
-     * 已下线待重新验证：DeepSeek-R1、Gemma 3、Phi-3、Llama 3.2、
-     * TinyLlama、StableLM 2、MiniCPM、Qwen2 0.5B、SmolLM2 135M、SmolLM2 135M MHA。
+     * 已下线待重新验证：DeepSeek-R1、Gemma 3 ONNX、Phi-3、Llama 3.2 ONNX、
+     * TinyLlama ONNX、StableLM 2、MiniCPM、Qwen2 0.5B、SmolLM2 135M、SmolLM2 135M MHA。
      * 原因是下载不可控、输出异常、无输出、链接失效或尚未取得完整真机通过证据。
      */
     val allModels: List<ModelInfo> = listOf(
@@ -260,15 +263,49 @@ object ModelRegistry {
             chatTemplate = ChatTemplate.CHATML,
             verifiedOnDevice = true
         ),
-        candidateTextModel("mobilellm-125m", "MobileLLM 125M", "Meta 端侧小模型候选，需要 tokenizer 和输出契约复测", "125M", 180, "https://hf-mirror.com/onnx-community/MobileLLM-125M/resolve/main/onnx/model.onnx"),
+        // 5. TinyLlama 1.1B Chat LiteRT（本轮非 Qwen 真机验证目标，使用 MediaPipe/LiteRT 独立 runtime）
+        ModelInfo(
+            id = "tinyllama-1.1b-task",
+            name = "TinyLlama 1.1B Chat LiteRT",
+            description = "TinyLlama Chat 小模型，使用 MediaPipe/LiteRT .task 包独立加载",
+            arch = ModelArch.TRANSFORMER,
+            paramSize = "1.1B",
+            quantization = "Q8",
+            downloadUrl = "https://huggingface.co/litert-community/TinyLlama-1.1B-Chat-v1.0/resolve/main/TinyLlama-1.1B-Chat-v1.0_multi-prefill-seq_q8_ekv1280.task",
+            mirrorUrls = listOf(
+                "https://hf-mirror.com/litert-community/TinyLlama-1.1B-Chat-v1.0/resolve/main/TinyLlama-1.1B-Chat-v1.0_multi-prefill-seq_q8_ekv1280.task"
+            ),
+            fileSizeMB = 1096,
+            isFullySupported = false,
+            tokenizerUrl = null,
+            capability = ModelCapability.TEXT_CHAT,
+            adapterType = RuntimeAdapterType.LITERT_LM,
+            assets = listOf(
+                ModelAsset(
+                    filename = "TinyLlama-1.1B-Chat-v1.0_multi-prefill-seq_q8_ekv1280.task",
+                    url = "https://huggingface.co/litert-community/TinyLlama-1.1B-Chat-v1.0/resolve/main/TinyLlama-1.1B-Chat-v1.0_multi-prefill-seq_q8_ekv1280.task",
+                    mirrorUrls = listOf(
+                        "https://hf-mirror.com/litert-community/TinyLlama-1.1B-Chat-v1.0/resolve/main/TinyLlama-1.1B-Chat-v1.0_multi-prefill-seq_q8_ekv1280.task"
+                    ),
+                    kind = ModelAssetKind.TASK
+                )
+            ),
+            verifiedOnDevice = true,
+            adapterAvailable = true
+        ),
         candidateTextModel("mobilellm-350m", "MobileLLM 350M", "Meta 端侧小模型候选，需要 tokenizer 和输出契约复测", "350M", 460, "https://hf-mirror.com/onnx-community/MobileLLM-350M/resolve/main/onnx/model.onnx"),
-        candidateTextModel("gemma3-270m-onnx", "Gemma 3 270M ONNX", "Google Gemma 小模型候选，需要 Gemma tokenizer 与外部数据清单", "270M", 340, "https://hf-mirror.com/onnx-community/gemma-3-270m-it-ONNX/resolve/main/onnx/model.onnx", RuntimeAdapterType.ONNX_TEXT_GENERATION),
         candidateTextModel("gemma3-1b-onnx", "Gemma 3 1B ONNX", "Google Gemma 1B 候选，需要内存预算和真机 dry-run", "1B", 1150, "https://hf-mirror.com/onnx-community/gemma-3-1b-it-ONNX/resolve/main/onnx/model.onnx", RuntimeAdapterType.ONNX_TEXT_GENERATION),
-        candidateTaskModel("gemma3-1b-task", "Gemma3-1B-IT LiteRT", "Google AI Edge LiteRT-LM 候选，需要 LiteRT adapter", "1B", 530, "https://huggingface.co/google/gemma-3-1b-it-litert-preview/resolve/main/gemma3-1b-it-int4.task", RuntimeAdapterType.LITERT_LM, ModelCapability.TEXT_CHAT),
-        candidateTaskModel("qwen25-1.5b-task", "Qwen2.5-1.5B LiteRT", "Google AI Edge LiteRT-LM 候选，需要 LiteRT adapter", "1.5B", 1550, "https://huggingface.co/google/qwen2.5-1.5b-instruct-litert-preview/resolve/main/qwen2.5-1.5b-instruct-int4.task", RuntimeAdapterType.LITERT_LM, ModelCapability.TEXT_CHAT),
+        candidateTaskModel("gemma3-1b-task", "Gemma3-1B-IT LiteRT", "Google AI Edge LiteRT-LM 候选，当前公开直链返回 401，需要免登录资产源", "1B", 530, "https://huggingface.co/google/gemma-3-1b-it-litert-preview/resolve/main/gemma3-1b-it-int4.task", RuntimeAdapterType.LITERT_LM, ModelCapability.TEXT_CHAT),
+        candidateTaskModel("qwen25-1.5b-task", "Qwen2.5-1.5B LiteRT", "Google AI Edge LiteRT-LM 候选，免登录源已确认，但本轮不作为非 Qwen 扩展目标", "1.5B", 1495, "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_seq128_q8_ekv1280.task", RuntimeAdapterType.LITERT_LM, ModelCapability.TEXT_CHAT),
         candidateTaskModel("gemma3n-e2b-task", "Gemma-3n E2B", "VLM / 文本候选，峰值内存高，需要 LiteRT 多模态 adapter", "E2B", 2991, "https://huggingface.co/google/gemma-3n-E2B-it-litert-preview/resolve/main/gemma-3n-E2B-it-int4.task", RuntimeAdapterType.LITERT_LM, ModelCapability.IMAGE_TEXT),
         candidateTaskModel("gemma3n-e4b-task", "Gemma-3n E4B", "VLM / 文本候选，峰值内存高，需要 LiteRT 多模态 adapter", "E4B", 4202, "https://huggingface.co/google/gemma-3n-E4B-it-litert-preview/resolve/main/gemma-3n-E4B-it-int4.task", RuntimeAdapterType.LITERT_LM, ModelCapability.IMAGE_TEXT),
         candidateTextModel("llama32-1b-onnx", "Llama 3.2 1B ONNX", "Meta Llama 小模型候选，需要许可、tokenizer 和真机输出验证", "1B", 1200, "https://hf-mirror.com/onnx-community/Llama-3.2-1B-Instruct-ONNX/resolve/main/onnx/model_q4f16.onnx"),
+        candidateTextModel("llama32-1b-gguf", "Llama 3.2 1B GGUF", "Meta Llama GGUF 候选，推荐 llama.cpp adapter，需许可和真机 JNI 验证", "1B", 737, "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_0.gguf", RuntimeAdapterType.LLAMA_CPP),
+        candidateTextModel("llama32-1b-uncensored-gguf", "Llama 3.2 1B Uncensored GGUF", "标称 uncensored 的 GGUF 候选，公开非 gated，推荐 llama.cpp adapter 后用 hello 复测", "1B", 760, "https://huggingface.co/mradermacher/Llama-3.2-1B-Instruct-Uncensored-GGUF/resolve/main/Llama-3.2-1B-Instruct-Uncensored.Q4_K_M.gguf", RuntimeAdapterType.LLAMA_CPP),
+        candidateTextModel("creative-rp-1b-gguf", "Creative Writing RP 1B GGUF", "标称 creative writing / roleplay / uncensored 的 GGUF 候选，公开非 gated，需 llama.cpp 真机验证", "1B", 1180, "https://huggingface.co/Novaciano/Uncensored-1b-Creative_Writing_RP-GGUF/resolve/main/Uncensored-1b-Creative_Writing_RP.gguf", RuntimeAdapterType.LLAMA_CPP),
+        candidateTextModel("triangulum-rp-1b-gguf", "Triangulum 1B Roleplay GGUF", "标称 roleplay / NSFW 的 GGUF 候选，公开非 gated，只用 hello 做正常问答验收", "1B", 1180, "https://huggingface.co/Novaciano/Triangulum-1B-DPO_Roleplay_NSFW-GGUF/resolve/main/Triangulum-1B-DPO_Roleplay_NSFW.gguf", RuntimeAdapterType.LLAMA_CPP),
+        candidateTextModel("uyara-companion-1.5b-gguf", "Uyara Companion 1.5B GGUF", "情感陪伴方向 GGUF 候选，公开非 gated，需 llama.cpp adapter 真机验证", "1.5B", 900, "https://huggingface.co/mradermacher/uyara-companion-1.5b-GGUF/resolve/main/uyara-companion-1.5b.Q4_K_M.gguf", RuntimeAdapterType.LLAMA_CPP),
+        candidateTextModel("tinyllama-1.1b-mnn", "TinyLlama 1.1B Chat MNN", "MNN 官方格式候选，需接入 MNN-LLM runtime，不能用 ONNX/MediaPipe 加载", "1.1B", 624, "https://huggingface.co/taobao-mnn/TinyLlama-1.1B-Chat-MNN/resolve/main/tinyllama-1.1b-int4.mnn", RuntimeAdapterType.MNN_LLM),
         candidateTextModel("deepseek-r1-qwen-1.5b-onnx", "DeepSeek-R1 Distill Qwen 1.5B", "推理模型候选，体积和生成格式需要单独验收", "1.5B", 1600, "https://hf-mirror.com/onnx-community/DeepSeek-R1-Distill-Qwen-1.5B-ONNX/resolve/main/onnx/model_q4f16.onnx"),
         candidateTextModel("phi3-mini-onnx", "Phi-3 Mini 4K ONNX", "微软 Phi 候选，体积较大且输入输出名需复核", "3.8B", 2300, "https://hf-mirror.com/onnx-community/Phi-3-mini-4k-instruct-onnx/resolve/main/cpu_and_mobile/cpu-int4-rtn-block-32/phi3-mini-4k-instruct-cpu-int4-rtn-block-32.onnx"),
         candidateMultiAssetModel("smolvlm-256m", "SmolVLM 256M", "图文理解候选，需要图像预处理和 VLM adapter", ModelCapability.IMAGE_TEXT, RuntimeAdapterType.ONNX_VISION, 470),
@@ -293,6 +330,9 @@ object ModelRegistry {
         candidateMultiAssetModel("mobilesam", "MobileSAM", "图像分割候选，需要 prompt、mask 解码和内存验证", ModelCapability.IMAGE_SEGMENTATION, RuntimeAdapterType.ONNX_VISION, 380),
         candidateMultiAssetModel("stable-diffusion-mobile", "Stable Diffusion Mobile", "文生图候选，需要 MNN/NCNN/TFLite diffusion pipeline", ModelCapability.IMAGE_GENERATION, RuntimeAdapterType.MNN, 1800),
         candidateMultiAssetModel("tiny-sd-lcm", "Tiny-SD / LCM", "轻量扩散候选，需要 diffusion scheduler 和图像解码 adapter", ModelCapability.IMAGE_GENERATION, RuntimeAdapterType.MNN, 950),
+        hiddenModel("mobilellm-125m", "MobileLLM 125M", "已真机复测：下载和加载成功，但基础 hello 输出网页语料碎片，不是正常对话"),
+        hiddenModel("gemma3-270m-onnx", "Gemma 3 270M ONNX", "已真机复测：下载、外部数据、tokenizer、加载均成功，但基础 hello 输出重复碎片"),
+        hiddenModel("tinyllama-1.1b-onnx", "TinyLlama 1.1B Chat ONNX", "已真机复测：下载、tokenizer、加载均成功，但基础 hello 生成完成后没有可读文本"),
         hiddenModel("qwen2-0.5b", "Qwen2 0.5B ONNX", "已真机复测：基础 hello 输出乱码 token"),
         hiddenModel("smollm2-135m", "SmolLM2 135M ONNX", "已真机复测：输出异常且不稳定"),
         hiddenModel("smollm2-135m-mha", "SmolLM2 135M MHA ONNX", "已真机复测：ONNX Runtime shape mismatch")

@@ -158,14 +158,16 @@ class ModelDownloaderTest {
     }
 
     @Test
-    fun resolveDownloadUrlsDoesNotConvertOfficialHuggingFaceToModelScope() {
+    fun resolveDownloadUrlsAddsHfMirrorAfterOfficialHuggingFace() {
         val filesDir = temporaryFolder.newFolder("files")
         val downloader = ModelDownloader(filesDir)
         val urls = downloader.resolveDownloadUrls(
             originalUrl = "https://huggingface.co/test-owner/test-model/resolve/main/model.onnx"
         )
 
-        assertEquals(listOf("https://huggingface.co/test-owner/test-model/resolve/main/model.onnx"), urls)
+        assertEquals("https://huggingface.co/test-owner/test-model/resolve/main/model.onnx", urls[0])
+        assertEquals("https://hf-mirror.com/test-owner/test-model/resolve/main/model.onnx", urls[1])
+        assertEquals("https://modelscope.cn/models/test-owner/test-model/resolve/main/model.onnx", urls[2])
     }
 
     @Test
