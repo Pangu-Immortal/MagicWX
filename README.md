@@ -7,7 +7,7 @@ Keywords: Android local LLM, Android 17 AI app, Jetpack Compose AI chat, ONNX Ru
 ## Current Status
 
 - Android app prototype: available.
-- Latest prototype release: `v1.1.3`.
+- Latest prototype release: `v1.1.4`.
 - Android target: API 37 / Android 17.
 - Verified production-ready models: none yet.
 - Verified first-run path: built-in MagicWX experience model, no external download required.
@@ -59,11 +59,12 @@ The app currently exposes only models that passed device validation. The built-i
 | Model | Architecture | Download status | Runtime status |
 |---|---|---|---|
 | MagicWX built-in experience | Built-in | Bundled in code | Verified on device for first-run chat |
+| RWKV-7 World 0.4B | RWKV | GitHub Release model package | Required visible model; user-validated as the best current mobile model |
 | Qwen3 0.6B | Transformer | Verified full download on Samsung test device | Verified `hello` chat response |
 | Qwen2.5 0.5B | Transformer | Verified full download on Samsung test device | Verified `hello` chat response |
 | SmolLM2 360M | Transformer | Verified full download on Samsung test device | Verified `hello` chat response |
 
-RWKV-7, DeepSeek-R1, Gemma 3, Phi-3, Llama 3.2, TinyLlama, StableLM 2, MiniCPM, Qwen2 0.5B, SmolLM2 135M, and SmolLM2 135M MHA are intentionally hidden until they can pass the same validation bar.
+DeepSeek-R1, Gemma 3, Phi-3, Llama 3.2, TinyLlama, StableLM 2, MiniCPM, Qwen2 0.5B, SmolLM2 135M, and SmolLM2 135M MHA are intentionally hidden until they can pass the same validation bar.
 
 ## Mobile Model Candidate Pool
 
@@ -72,6 +73,7 @@ This catalog is a research and implementation queue, not a support claim. Only t
 | Modality | Candidate | Mobile runtime / format | MagicWX status |
 |---|---|---|---|
 | LLM | Qwen3 0.6B ONNX | ONNX q4f16 + tokenizer | Verified |
+| LLM | RWKV-7 World 0.4B | ONNX + bundled RWKV vocab | Verified; required visible model |
 | LLM | Qwen2.5 0.5B ONNX | ONNX q4f16 + tokenizer | Verified |
 | LLM | SmolLM2 360M ONNX | ONNX q4f16 + tokenizer | Verified |
 | LLM | Qwen2 0.5B ONNX | ONNX q4f16 + tokenizer | Hidden: garbled output |
@@ -115,7 +117,7 @@ External model downloads run in a user-started `dataSync` foreground service. Us
 
 ## Android 17 Notes
 
-The `v1.1.3` prototype targets Android 17 / API 37. Current code does not use local-network discovery, SMS/OTP APIs, custom notifications, or fixed-orientation constraints, so the Android 17 adaptation is focused on SDK targeting, backup safety, edge-to-edge Compose screens, adapter-gated model loading, and release verification.
+The `v1.1.4` prototype targets Android 17 / API 37. Current code does not use local-network discovery, SMS/OTP APIs, custom notifications, or fixed-orientation constraints, so the Android 17 adaptation is focused on SDK targeting, backup safety, edge-to-edge Compose screens, adapter-gated model loading, and release verification.
 
 Large-screen, foldable, and tablet behavior still needs real-device validation before production claims. Model correctness also requires per-model package manifests, tokenizer parity checks, fixed-input dry-runs, and device logs.
 

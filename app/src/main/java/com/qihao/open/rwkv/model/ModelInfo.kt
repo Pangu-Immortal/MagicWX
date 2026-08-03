@@ -170,7 +170,7 @@ object ModelRegistry {
      * 2. 可正常加载进入对话页
      * 3. 使用基础测试词 hello 可输出自然回复
      *
-     * 已下线待重新验证：RWKV-7、DeepSeek-R1、Gemma 3、Phi-3、Llama 3.2、
+     * 已下线待重新验证：DeepSeek-R1、Gemma 3、Phi-3、Llama 3.2、
      * TinyLlama、StableLM 2、MiniCPM、Qwen2 0.5B、SmolLM2 135M、SmolLM2 135M MHA。
      * 原因是下载不可控、输出异常、无输出、链接失效或尚未取得完整真机通过证据。
      */
@@ -190,7 +190,24 @@ object ModelRegistry {
             adapterType = RuntimeAdapterType.BUILTIN_TEXT,
             verifiedOnDevice = true
         ),
-        // 1. 阿里巴巴 Qwen3（已真机验证：下载、加载、hello 回复通过）
+        // 1. RWKV Foundation（用户亲测效果最佳，使用内置 vocab.json 分词器）
+        ModelInfo(
+            id = "rwkv7-world-0.4b",
+            name = "RWKV-7 World 0.4B",
+            description = "RWKV-7 架构，支持 100+ 语言，手机端流畅运行",
+            arch = ModelArch.RWKV,
+            paramSize = "0.4B",
+            quantization = "FP32",
+            downloadUrl = "https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/model.onnx",
+            fileSizeMB = 1572,
+            isFullySupported = true,
+            tokenizerUrl = null,
+            adapterType = RuntimeAdapterType.ONNX_TEXT_GENERATION,
+            visibility = ModelVisibility.VERIFIED,
+            verifiedOnDevice = true,
+            adapterAvailable = true
+        ),
+        // 2. 阿里巴巴 Qwen3（已真机验证：下载、加载、hello 回复通过）
         ModelInfo(
             id = "qwen3-0.6b",
             name = "Qwen3 0.6B",
@@ -205,7 +222,7 @@ object ModelRegistry {
             chatTemplate = ChatTemplate.QWEN3,
             verifiedOnDevice = true
         ),
-        // 2. 阿里巴巴 Qwen2.5 0.5B（已真机验证：下载、加载、hello 回复通过）
+        // 3. 阿里巴巴 Qwen2.5 0.5B（已真机验证：下载、加载、hello 回复通过）
         ModelInfo(
             id = "qwen25-0.5b",
             name = "Qwen2.5 0.5B",
@@ -220,7 +237,7 @@ object ModelRegistry {
             chatTemplate = ChatTemplate.CHATML,
             verifiedOnDevice = true
         ),
-        // 3. HuggingFace SmolLM2 360M（已真机验证：下载、加载、hello 回复通过）
+        // 4. HuggingFace SmolLM2 360M（已真机验证：下载、加载、hello 回复通过）
         ModelInfo(
             id = "smollm2-360m",
             name = "SmolLM2 360M",

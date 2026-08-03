@@ -8,15 +8,15 @@ The app SHALL declare Android 17 / API 37 as its compile and target SDK when the
 - **THEN** all commands complete successfully without lint errors
 
 ### Requirement: Release Version
-The app SHALL increment release identity from `1.0` / `1` to `1.1.3` / `5`.
+The app SHALL increment release identity from `1.0` / `1` to `1.1.4` / `6`.
 
 #### Scenario: APK metadata is inspected
 - **WHEN** the release candidate is built
-- **THEN** the APK metadata reflects `versionName=1.1.3` and `versionCode=5`
+- **THEN** the APK metadata reflects `versionName=1.1.4` and `versionCode=6`
 
 ### Requirement: GitHub Release Artifact
 The release SHALL publish an APK artifact and notes that describe verification status and known limitations.
 
 #### Scenario: Release is created
-- **WHEN** GitHub Release `v1.1.3` is viewed
+- **WHEN** GitHub Release `v1.1.4` is viewed
 - **THEN** it contains the APK artifact and release notes that disclose prototype scope

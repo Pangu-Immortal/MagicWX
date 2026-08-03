@@ -37,6 +37,16 @@ class ModelRuntimeAdapterFactoryTest {
     }
 
     @Test
+    fun rwkvModelUsesOnnxTextAdapter() {
+        val modelInfo = ModelRegistry.models.first { it.id == "rwkv7-world-0.4b" }
+        val adapter = ModelRuntimeAdapterFactory.create(modelInfo)
+
+        assertTrue(adapter is OnnxTextGenerationAdapter)
+        assertTrue(adapter.canLoad(modelInfo))
+        assertTrue(modelInfo.arch == ModelArch.RWKV)
+    }
+
+    @Test
     fun candidateModelUsesUnsupportedAdapter() {
         val modelInfo = ModelRegistry.getCandidates().first()
         val adapter = ModelRuntimeAdapterFactory.create(modelInfo)

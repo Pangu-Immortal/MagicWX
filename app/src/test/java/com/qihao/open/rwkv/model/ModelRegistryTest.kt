@@ -21,12 +21,12 @@ class ModelRegistryTest {
     companion object {
         private val VERIFIED_MODEL_IDS = setOf(
             "magicwx-builtin-demo",
+            "rwkv7-world-0.4b",
             "qwen3-0.6b",
             "qwen25-0.5b",
             "smollm2-360m"
         )
         private val DISABLED_MODEL_IDS = setOf(
-            "rwkv7-world-0.4b",
             "deepseek-r1-1.5b",
             "gemma3-1b",
             "phi3-mini",
@@ -105,5 +105,16 @@ class ModelRegistryTest {
             assertTrue("可见模型必须有可用 adapter: ${modelInfo.id}", modelInfo.adapterAvailable)
             assertTrue("可见模型必须有真机验证证据标记: ${modelInfo.id}", modelInfo.verifiedOnDevice)
         }
+    }
+
+    @Test
+    fun rwkvModelIsVisibleAndFullySupported() {
+        val rwkv = ModelRegistry.models.firstOrNull { it.id == "rwkv7-world-0.4b" }
+
+        assertNotNull("RWKV 是用户确认的必需模型，不能从首页可见模型中移除", rwkv)
+        assertEquals(ModelArch.RWKV, rwkv!!.arch)
+        assertEquals(RuntimeAdapterType.ONNX_TEXT_GENERATION, rwkv.adapterType)
+        assertTrue("RWKV 应保持完全支持标记", rwkv.isFullySupported)
+        assertTrue("RWKV 应保持 adapter 可用", rwkv.adapterAvailable)
     }
 }

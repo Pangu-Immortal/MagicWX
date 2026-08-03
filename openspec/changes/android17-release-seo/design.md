@@ -18,8 +18,8 @@ The project currently builds with AGP 8.7.3, Gradle 8.11.1, Kotlin 2.1.0, `compi
 
 ## Decisions
 
-1. Use `versionName=1.1.3` and `versionCode=5`.
-   - Rationale: `1.1.3` adds the code-level model capability schema and runtime adapter gate after pruning failed model entries, retesting retained models, and documenting the broader mobile model roadmap.
+1. Use `versionName=1.1.4` and `versionCode=6`.
+   - Rationale: `1.1.4` restores RWKV as a required visible model while preserving the code-level model capability schema and runtime adapter gate.
 
 2. Use AGP 9 built-in Kotlin for API 37 targeting.
    - Rationale: AGP 8.7.3 rejected the installed API 37 platform layout, while AGP 9.3.1 with Gradle 9.6.1 verified `compileSdk=37` and `targetSdk=37`. The app is single-module and has no custom legacy variant API usage.
