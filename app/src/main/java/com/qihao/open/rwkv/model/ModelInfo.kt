@@ -545,7 +545,7 @@ object ModelRegistry {
         localDreamSdxlModel(
             id = "localdream-illustrious-v16",
             name = "Illustrious v16 SDXL NPU",
-            description = "SDXL 动漫创作：1024 画布，适合高质量二次元角色与插画。",
+            description = "SDXL 动漫标准版：1024 画布，Illustrious v16 风格，20 步精绘画质优先（细节丰富，约 5min/张；与下方 DMD2 同风格但多步高质，追求质量选它）",
             fileUri = "xororz/sdxl-qnn/resolve/main/illustrious_v16_qnn2.28_8gen3.zip",
             defaultPrompt = LocalDreamDefaults.ILLUSTRIOUS_PROMPT,
             defaultNegativePrompt = LocalDreamDefaults.ANIME_NEGATIVE_PROMPT
@@ -553,7 +553,7 @@ object ModelRegistry {
         localDreamSdxlModel(
             id = "localdream-illustrious-v16-dmd2",
             name = "Illustrious v16 DMD2 NPU",
-            description = "SDXL 快速出图：DMD2 蒸馏模型，主打少步数高速度。",
+            description = "SDXL DMD2 动漫快图：蒸馏模型，4-8 步快速出图，Illustrious v16 风格（速度 3-5 倍于标准 SDXL，适合快速预览/批量，画质略降；与上方标准版同风格选快选精）",
             fileUri = "xororz/sdxl-qnn/resolve/main/illustrious_v16_dmd2_qnn2.28_8gen3.zip",
             // steps/cfg/scheduler 不在代码里写死：参照仓库中 DMD2 模型随 zip 内置
             // config.json 携带蒸馏参数，当前仅移植 prompt/negativePrompt 两类代码默认
@@ -563,7 +563,7 @@ object ModelRegistry {
         localDreamSdxlModel(
             id = "localdream-cyber-realistic-v10",
             name = "CyberRealistic v10 SDXL NPU",
-            description = "SDXL 写实摄影：适合真实质感、人像和场景光影。",
+            description = "SDXL 写实标准版：1024 画布，CyberRealistic v10 风格，20 步精绘真实质感/人像/光影（画质优先，约 5min/张；与下方 DMD2 同风格但多步高质）",
             fileUri = "xororz/sdxl-qnn/resolve/main/cyber_realistic_v10_qnn2.28_8gen3.zip",
             defaultPrompt = LocalDreamDefaults.CYBER_REALISTIC_PROMPT,
             defaultNegativePrompt = LocalDreamDefaults.CYBER_REALISTIC_NEGATIVE_PROMPT
@@ -571,7 +571,7 @@ object ModelRegistry {
         localDreamSdxlModel(
             id = "localdream-cyber-realistic-v10-dmd2",
             name = "CyberRealistic v10 DMD2 NPU",
-            description = "SDXL 写实快图：少步数生成真实风格照片。",
+            description = "SDXL DMD2 写实快图：蒸馏模型，4-8 步快速真实照片，CyberRealistic v10 风格（速度 3-5 倍于标准 SDXL，适合快速预览，画质略降；与上方标准版同风格选快选精）",
             fileUri = "xororz/sdxl-qnn/resolve/main/cyber_realistic_v10_dmd2_qnn2.28_8gen3.zip",
             defaultPrompt = LocalDreamDefaults.CYBER_REALISTIC_PROMPT,
             defaultNegativePrompt = LocalDreamDefaults.CYBER_REALISTIC_NEGATIVE_PROMPT
