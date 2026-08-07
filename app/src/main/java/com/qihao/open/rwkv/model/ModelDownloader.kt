@@ -29,6 +29,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.zip.ZipFile
 
 class ModelDownloader private constructor(
     private val filesDir: File,                           // 应用私有文件根目录
@@ -49,7 +50,11 @@ class ModelDownloader private constructor(
         private const val FAST_CONNECT_TIMEOUT_MS = 5_000     // 镜像源连接 5 秒无响应即失败，减少首屏等待
         private const val FAST_READ_TIMEOUT_MS = 8_000        // 镜像源 8 秒无下载进度即重试或切换备用源
         private const val SLOW_CONNECT_TIMEOUT_MS = 15_000    // GitHub 等单源大文件允许更长连接时间
-        private const val SLOW_READ_TIMEOUT_MS = 120_000      // GitHub Release 首包慢，读超时放宽避免误中断
+        private const val SLOW_READ_TIMEOUT_MS = 18_000       // 大文件源 18 秒无数据即切源，避免用户长时间看不到进度
+        private val GITHUB_PROXY_PREFIXES = listOf(           // GitHub Release 备用代理，按顺序失败切换
+            "https://gh-proxy.ygxz.in/",
+            "https://gh.llkk.cc/"
+        )
     }
 
     constructor(context: Context) : this(context.filesDir, enableMigration = true)
@@ -76,6 +81,32 @@ class ModelDownloader private constructor(
      * @param modelId 模型唯一标识
      */
     private fun getModelDir(modelId: String): File = File(modelsRoot, modelId)
+
+    /** 获取模型目录路径，供非 ONNX 运行时按目录加载多资产模型包 */
+    fun getModelDirectory(modelId: String): File {
+        return getModelDir(modelId)                            // 只暴露目录对象，不绕过完整性检查
+    }
+
+    /**
+     * 解析真正承载运行时文件的目录。
+     *
+     * HuggingFace 上的 LocalDream zip 包解压后通常保留单个顶层文件夹
+     * （如 AnythingV5.zip → AnythingV5/），导致运行时文件位于模型目录的
+     * 一层子目录之下，而 native 后端要求文件直接位于 --model_dir 下。
+     * 解析规则：
+     * - 模型顶层目录已含首个必需文件 → 平铺布局，直接返回模型目录；
+     * - 否则查找包含该文件的唯一子目录 → 返回该子目录；
+     * - 均不满足 → 回退模型目录本身（交由完整性门禁报缺失）。
+     *
+     * @param modelInfo 模型元信息，按 requiredRuntimeFiles 首个文件作为探针
+     */
+    fun getRuntimeDirectory(modelInfo: ModelInfo): File {
+        val modelDir = getModelDir(modelInfo.id)
+        val probe = modelInfo.requiredRuntimeFiles.firstOrNull() ?: return modelDir // 无布局约束的模型直接用顶层目录
+        if (File(modelDir, probe).isFile) return modelDir      // 平铺布局优先，兼容 local-dream 式解压
+        val childDirs = modelDir.listFiles()?.filter { it.isDirectory }.orEmpty()
+        return childDirs.firstOrNull { child -> File(child, probe).isFile } ?: modelDir
+    }
 
     /**
      * 从下载 URL 中提取原始文件名
@@ -132,8 +163,23 @@ class ModelDownloader private constructor(
 
     /** 判断显式资产是否已经下载完成 */
     private fun hasReadyAsset(modelInfo: ModelInfo, asset: ModelAsset): Boolean {
+        if (asset.kind == ModelAssetKind.ARCHIVE) {
+            return isArchiveAssetReady(modelInfo, asset)        // zip 包解压后不强制保留原始压缩包
+        }
         val file = File(getAssetPath(modelInfo, asset))
         return file.isFile && file.length() > 0L               // 所有必需资产必须是非空正式文件
+    }
+
+    /** 判断 zip 模型包是否已经下载或完成解压 */
+    private fun isArchiveAssetReady(modelInfo: ModelInfo, asset: ModelAsset): Boolean {
+        val modelDir = getModelDir(modelInfo.id)
+        if (!modelDir.isDirectory) return false
+        return modelDir.walkTopDown().any { file ->
+            file.isFile &&
+                !file.name.endsWith(TEMP_SUFFIX) &&
+                !file.name.equals(asset.filename, ignoreCase = true) &&
+                file.length() > 0L
+        }                                                       // 解压后目录中至少应有一个运行时文件
     }
 
     /**
@@ -185,7 +231,7 @@ class ModelDownloader private constructor(
         if (modelInfo.adapterType == RuntimeAdapterType.BUILTIN_TEXT) {
             return ModelReadiness(true, "内置体验模型无需下载") // 内置体验模型不依赖外部 ONNX 文件
         }
-        if (!modelInfo.adapterAvailable) {
+        if (!modelInfo.adapterAvailable && !isDownloadOnlyImagePackage(modelInfo)) {
             return ModelReadiness(
                 false,
                 modelInfo.unavailableReason.ifBlank {
@@ -198,6 +244,10 @@ class ModelDownloader private constructor(
         val missingAsset = requiredAssets.firstOrNull { !hasReadyAsset(modelInfo, it) }
         if (missingAsset != null && modelInfo.assets.isNotEmpty()) {
             return ModelReadiness(false, "缺少必需资产: ${missingAsset.filename}")
+        }
+        val missingRuntimeFile = findMissingRequiredRuntimeFile(modelInfo)
+        if (missingRuntimeFile != null) {
+            return ModelReadiness(false, "缺少运行时文件: $missingRuntimeFile")
         }
         if (modelInfo.assets.isNotEmpty() && modelInfo.adapterType != RuntimeAdapterType.ONNX_TEXT_GENERATION) {
             return ModelReadiness(true, "显式模型资产已就绪") // 非文本 adapter 接入后按资产清单判定，不强制 tokenizer
@@ -221,6 +271,43 @@ class ModelDownloader private constructor(
         }
 
         return ModelReadiness(true, "模型文件已就绪", modelFile)
+    }
+
+    /** 校验 LocalDream / 多文件模型包的固定运行时布局，避免只解出一个文件就误判 ready */
+    private fun findMissingRequiredRuntimeFile(modelInfo: ModelInfo): String? {
+        if (modelInfo.requiredRuntimeFiles.isEmpty()) return null
+        val runtimeDir = getRuntimeDirectory(modelInfo)        // zip 可能带顶层文件夹，按实际运行时目录校验
+        if (!runtimeDir.isDirectory) return modelInfo.requiredRuntimeFiles.first()
+        return modelInfo.requiredRuntimeFiles.firstOrNull { relativePath ->
+            val file = File(runtimeDir, relativePath)
+            !file.isFile || file.length() <= 0L
+        }
+    }
+
+    /** LocalDream 图片模型允许先下载和校验，即使 native adapter 还未完全开放生成 */
+    private fun isDownloadOnlyImagePackage(modelInfo: ModelInfo): Boolean {
+        return modelInfo.imageBackendType.isNotBlank() &&
+            (modelInfo.capability == ModelCapability.IMAGE_GENERATION ||
+                modelInfo.capability == ModelCapability.IMAGE_UPSCALING)
+    }
+
+    /**
+     * 检查 NPU 模型是否需要升级到 v3 格式。
+     *
+     * 对齐参照 modules/local-dream .../data/Model.kt:286-294 needsModelUpgrade：
+     * 仅 NPU 模型需要 v3 marker 文件；模型目录存在但缺少 v3 标记文件时返回 true，
+     * 表示当前模型包为旧版本，需要提示用户升级。
+     *
+     * @param modelId 模型唯一标识
+     * @param isNpu 是否为 NPU 模型（CPU 模型不需要 v3 marker）
+     * @return true 表示模型已下载但需要升级到 v3 格式
+     */
+    fun needsModelUpgrade(modelId: String, isNpu: Boolean): Boolean {
+        if (!isNpu) return false                                 // CPU 模型不依赖 v3 marker
+        val modelDir = getModelDir(modelId)
+        if (!modelDir.exists() || !modelDir.isDirectory) return false // 模型未下载，无需升级提示
+        val v3Marker = File(modelDir, "v3")
+        return !v3Marker.exists()                                // v3 marker 缺失即需升级
     }
 
     /** 判断大模型小 ONNX 是否需要伴随外部数据文件 */
@@ -325,7 +412,7 @@ class ModelDownloader private constructor(
             val modelDir = getModelDir(modelInfo.id)
             modelDir.mkdirs()                                  // 确保目录存在
 
-            if (!modelInfo.adapterAvailable) {
+            if (!modelInfo.adapterAvailable && !isDownloadOnlyImagePackage(modelInfo)) {
                 Log.e(TAG, "adapter 未接入，拒绝下载候选模型: ${modelInfo.id}")
                 onStatus?.invoke(modelInfo.unavailableReason.ifBlank {
                     "当前模型需要 ${modelInfo.adapterType} adapter，暂未接入"
@@ -461,8 +548,16 @@ class ModelDownloader private constructor(
 
         assets.forEachIndexed { index, asset ->
             val targetFile = File(getAssetPath(modelInfo, asset))
-            if (targetFile.isFile && targetFile.length() > 0L) {
+            if (hasReadyAsset(modelInfo, asset)) {
                 onStatus?.invoke("资产已存在: ${asset.filename}")
+                return@forEachIndexed
+            }
+            if (asset.kind == ModelAssetKind.ARCHIVE && targetFile.isFile && targetFile.length() > 0L) {
+                onStatus?.invoke("检测到已下载模型包，正在解压: ${asset.filename}")
+                unzipArchiveToModelDirectory(targetFile, getModelDir(modelInfo.id))
+                if (targetFile.exists() && !targetFile.delete()) {
+                    Log.w(TAG, "zip 模型包删除失败，将保留到下次清理: ${targetFile.absolutePath}")
+                }
                 return@forEachIndexed
             }
 
@@ -491,11 +586,45 @@ class ModelDownloader private constructor(
                 Log.e(TAG, "必需资产下载失败: ${modelInfo.id}/${asset.filename}")
                 return false
             }
+            if (success && asset.kind == ModelAssetKind.ARCHIVE) {
+                onStatus?.invoke("正在解压模型包: ${asset.filename}")
+                unzipArchiveToModelDirectory(targetFile, getModelDir(modelInfo.id))
+                if (targetFile.exists() && !targetFile.delete()) {
+                    Log.w(TAG, "zip 模型包删除失败，将保留到下次清理: ${targetFile.absolutePath}")
+                }
+            }
             if (targetFile.isFile) completedBytes += targetFile.length()
         }
 
         onProgress(completedBytes, completedBytes, 100)
         return true
+    }
+
+    /** 安全解压 zip 模型包，防止恶意 entry 逃逸出模型目录 */
+    private fun unzipArchiveToModelDirectory(archiveFile: File, modelDir: File) {
+        require(archiveFile.isFile && archiveFile.length() > 0L) {
+            "zip 模型包不存在或为空: ${archiveFile.name}"
+        }
+        val canonicalRoot = modelDir.canonicalFile
+        ZipFile(archiveFile).use { zip ->
+            zip.entries().asSequence().forEach { entry ->
+                val target = File(modelDir, entry.name).canonicalFile
+                if (!target.path.startsWith(canonicalRoot.path + File.separator) && target != canonicalRoot) {
+                    throw IllegalStateException("zip 模型包包含非法路径: ${entry.name}")
+                }
+                if (entry.isDirectory) {
+                    target.mkdirs()                            // 目录 entry 直接创建
+                } else {
+                    target.parentFile?.mkdirs()                 // 文件 entry 先补齐父目录
+                    zip.getInputStream(entry).use { input ->
+                        FileOutputStream(target).use { output ->
+                            input.copyTo(output, BUFFER_SIZE)   // 使用统一大缓冲减少解压时间
+                        }
+                    }
+                }
+            }
+        }
+        Log.d(TAG, "zip 模型包解压完成: ${archiveFile.name} → ${modelDir.absolutePath}")
     }
 
     /** 从多个候选源下载同一个文件，当前源无进度或失败时快速切到下一个源 */
@@ -540,6 +669,11 @@ class ModelDownloader private constructor(
     private fun addDownloadUrlWithFallbacks(urls: LinkedHashSet<String>, declaredUrl: String) {
         if (declaredUrl.isBlank()) return
         urls += declaredUrl                                    // 先尝试真实声明源，保留官方 URL 优先级
+        if (declaredUrl.startsWith("https://github.com/")) {
+            GITHUB_PROXY_PREFIXES.forEach { prefix ->
+                urls += "$prefix$declaredUrl"                  // GitHub Release 大文件自动补充代理镜像
+            }
+        }
         val hfMirrorUrl = toHfMirrorUrl(declaredUrl)
         if (hfMirrorUrl != null) urls += hfMirrorUrl            // 官方 HuggingFace 失败时自动切 hf-mirror
         val modelScopeUrl = toModelScopeUrl(hfMirrorUrl ?: declaredUrl)
@@ -570,6 +704,8 @@ class ModelDownloader private constructor(
             url.startsWith("https://modelscope.cn/") -> "ModelScope"
             url.startsWith("https://hf-mirror.com/") -> "HF Mirror"
             url.startsWith("https://huggingface.co/") -> "HuggingFace"
+            url.contains("gh-proxy") || url.contains("gh.llkk.cc") -> "GitHub 镜像"
+            url.contains("sdai-models.moroz.cc") -> "SDAI 模型源"
             else -> URL(url).host
         }
     }
@@ -731,8 +867,9 @@ class ModelDownloader private constructor(
 
         while (redirectCount < 10) {
             val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = connectTimeoutFor(urlStr)     // 按源类型设置连接超时，兼顾快切和大文件稳定性
-            conn.readTimeout = readTimeoutFor(urlStr)           // 按源类型设置读超时，防止 GitHub 大文件首包误失败
+            val currentUrl = url.toString()                     // 重定向后的 CDN 域名才是真实下载源
+            conn.connectTimeout = connectTimeoutFor(currentUrl) // 按实际源类型设置连接超时，兼顾快切和大文件稳定性
+            conn.readTimeout = readTimeoutFor(currentUrl)       // 按实际源类型设置读超时，防止大文件 CDN 首包慢
             conn.instanceFollowRedirects = false               // 手动处理重定向（跨域需要）
             conn.setRequestProperty("User-Agent", "MagicWX-Android/1.1")
             conn.setRequestProperty("Accept", "*/*")
@@ -779,6 +916,10 @@ class ModelDownloader private constructor(
     private fun isSlowSingleSource(url: String): Boolean {
         return url.startsWith("https://github.com/") ||
             url.contains("github-releases.githubusercontent.com") ||
-            url.contains("release-assets.githubusercontent.com")
+            url.contains("release-assets.githubusercontent.com") ||
+            url.contains(".hf.co/") ||
+            url.contains("xet-bridge") ||
+            url.contains("cas-bridge") ||
+            url.contains("sdai-models.moroz.cc")
     }
 }

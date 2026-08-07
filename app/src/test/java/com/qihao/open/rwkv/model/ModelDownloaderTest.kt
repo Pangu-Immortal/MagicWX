@@ -171,6 +171,32 @@ class ModelDownloaderTest {
     }
 
     @Test
+    fun resolveDownloadUrlsAddsGitHubProxyFallbacks() {
+        val filesDir = temporaryFolder.newFolder("files")
+        val downloader = ModelDownloader(filesDir)
+        val urls = downloader.resolveDownloadUrls(
+            originalUrl = "https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/model.onnx"
+        )
+
+        assertEquals("https://github.com/Pangu-Immortal/MagicWX/releases/download/1.0.1/model.onnx", urls[0])
+        assertTrue("GitHub 源必须自动补充代理兜底", urls.any { it.startsWith("https://gh-proxy.ygxz.in/https://github.com/") })
+        assertTrue("GitHub 源必须至少有第二代理兜底", urls.any { it.startsWith("https://gh.llkk.cc/https://github.com/") })
+    }
+
+    @Test
+    fun mediaPipeImageModelDeclaresMultipleDownloadFallbacks() {
+        val filesDir = temporaryFolder.newFolder("files")
+        val downloader = ModelDownloader(filesDir)
+        val modelInfo = ModelRegistry.allModels.first { it.id == "minisd-mediapipe" }
+        val asset = modelInfo.assets.first()
+        val urls = downloader.resolveDownloadUrls(asset.url, asset.mirrorUrls)
+
+        assertTrue("MiniSD 必须保留主下载源", urls.any { it.contains("sdai-models.moroz.cc") })
+        assertTrue("MiniSD 必须保留 GitHub Release 备用源", urls.any { it.startsWith("https://github.com/") })
+        assertTrue("MiniSD 必须自动补充 GitHub 代理", urls.any { it.startsWith("https://gh-proxy.ygxz.in/https://github.com/") })
+    }
+
+    @Test
     fun rwkvModelDeclaresMultipleDownloadSources() {
         val rwkv = ModelRegistry.models.first { it.id == "rwkv7-world-0.4b" }
         val urls = listOf(rwkv.downloadUrl) + rwkv.mirrorUrls
@@ -201,6 +227,67 @@ class ModelDownloaderTest {
         writeModelFile(filesDir, modelInfo.id, "encoder.onnx", "asset")
 
         assertTrue(downloader.isModelReady(modelInfo))
+    }
+
+    @Test
+    fun localDreamArchiveNotReady_whenRequiredRuntimeFileMissing() {
+        val filesDir = temporaryFolder.newFolder("files")
+        val downloader = ModelDownloader(filesDir)
+        val modelInfo = ModelRegistry.allModels.first { it.id == "localdream-anythingv5-cpu" }
+
+        modelInfo.requiredRuntimeFiles.dropLast(1).forEach { filename ->
+            writeModelFile(filesDir, modelInfo.id, filename, "runtime")
+        }
+
+        val readiness = downloader.getModelReadiness(modelInfo)
+
+        assertFalse(readiness.isReady)
+        assertTrue(readiness.reason.contains("缺少运行时文件"))
+    }
+
+    @Test
+    fun localDreamArchiveReady_whenAllRequiredRuntimeFilesExist() {
+        val filesDir = temporaryFolder.newFolder("files")
+        val downloader = ModelDownloader(filesDir)
+        val modelInfo = ModelRegistry.allModels.first { it.id == "localdream-anythingv5-cpu" }
+
+        modelInfo.requiredRuntimeFiles.forEach { filename ->
+            writeModelFile(filesDir, modelInfo.id, filename, "runtime")
+        }
+
+        assertTrue(downloader.isModelReady(modelInfo))
+    }
+
+    @Test
+    fun localDreamArchiveReady_whenRuntimeFilesInsideSingleNestedFolder() {
+        val filesDir = temporaryFolder.newFolder("files")
+        val downloader = ModelDownloader(filesDir)
+        val modelInfo = ModelRegistry.allModels.first { it.id == "localdream-anythingv5-cpu" }
+
+        // 模拟 HF zip 带顶层文件夹（AnythingV5/）的解压布局：运行时文件全部位于子目录
+        modelInfo.requiredRuntimeFiles.forEach { filename ->
+            val nestedDir = File(File(filesDir, "models"), "${modelInfo.id}/AnythingV5")
+            nestedDir.mkdirs()
+            File(nestedDir, filename).writeText("runtime")
+        }
+
+        assertTrue(downloader.isModelReady(modelInfo))
+        // 运行时目录必须解析到嵌套子目录，供 native 后端 --model_dir 直接使用
+        assertEquals("AnythingV5", downloader.getRuntimeDirectory(modelInfo).name)
+    }
+
+    @Test
+    fun localDreamRuntimeDirectory_prefersFlatLayoutOverNested() {
+        val filesDir = temporaryFolder.newFolder("files")
+        val downloader = ModelDownloader(filesDir)
+        val modelInfo = ModelRegistry.allModels.first { it.id == "localdream-anythingv5-cpu" }
+
+        modelInfo.requiredRuntimeFiles.forEach { filename ->
+            writeModelFile(filesDir, modelInfo.id, filename, "runtime")
+        }
+
+        // 平铺布局优先：顶层目录已含必需文件时不下钻子目录
+        assertEquals(modelInfo.id, downloader.getRuntimeDirectory(modelInfo).name)
     }
 
     /** 构造测试专用 RWKV 模型，验证底层兼容分支但不进入用户可选注册表 */

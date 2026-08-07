@@ -9,6 +9,8 @@ package com.qihao.open.rwkv
 
 import android.app.Application
 import android.util.Log
+import com.qihao.open.rwkv.model.PinnedModels
+import com.qihao.open.rwkv.model.image.ImageInferenceBackendPlanner
 
 class App : Application() {
 
@@ -18,6 +20,8 @@ class App : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "RWKV Android 应用启动")
+        PinnedModels.initialize(this)  // 模型置顶持久化单例初始化（对齐参照 PinnedModels）
+        val imageBackendChoice = ImageInferenceBackendPlanner.initializeAtAppStart(this)
+        Log.d(TAG, "RWKV Android 应用启动，图片推理架构=${imageBackendChoice.backend.displayName}，原因=${imageBackendChoice.reason}")
     }
 }

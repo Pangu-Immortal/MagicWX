@@ -21,7 +21,9 @@ class BuiltinExperienceModel : TextGenerationEngine {
 
     companion object {
         private const val TAG = "BuiltinExperienceModel"
-        private const val TOKEN_DELAY_MS = 18L // 模拟端侧流式输出节奏
+        private const val TOKEN_DELAY_MS = 18L     // 模拟端侧流式输出节奏
+        private const val GUEST_TITLE = "客官"      // 古风客栈人设下对用户的固定称呼
+        private const val SELF_TITLE = "小女子"     // 内置体验模型固定自称
     }
 
     private var turnCount = 0              // 当前会话轮次
@@ -44,15 +46,15 @@ class BuiltinExperienceModel : TextGenerationEngine {
         onToken: (String) -> Unit
     ) {
         withContext(Dispatchers.IO) {
-        val reply = buildReply(prompt.trim(), maxTokens)       // 构造本地体验回复
-        val chunks = reply.chunked(2)                          // 两字一段，贴近流式生成
-        for (chunk in chunks) {
-            if (!coroutineContext.isActive) break              // 用户停止时立即退出
-            withContext(Dispatchers.Main) { onToken(chunk) }   // UI 状态只能在主线程更新
-            delay(TOKEN_DELAY_MS)                              // 限速避免 UI 瞬间刷完
-        }
-        turnCount += 1
-        Log.d(TAG, "内置体验回复完成: turn=$turnCount, chars=${reply.length}")
+            val reply = buildReply(prompt.trim(), maxTokens)       // 构造本地体验回复
+            val chunks = reply.chunked(2)                          // 两字一段，贴近流式生成
+            for (chunk in chunks) {
+                if (!coroutineContext.isActive) break              // 用户停止时立即退出
+                withContext(Dispatchers.Main) { onToken(chunk) }   // UI 状态只能在主线程更新
+                delay(TOKEN_DELAY_MS)                              // 限速避免 UI 瞬间刷完
+            }
+            turnCount += 1
+            Log.d(TAG, "内置体验回复完成: turn=$turnCount, chars=${reply.length}")
         }
     }
 
@@ -74,13 +76,13 @@ class BuiltinExperienceModel : TextGenerationEngine {
         val safePrompt = prompt.ifBlank { "你好" }             // 空输入兜底为问候
         val baseReply = when {
             safePrompt.contains("你好") || safePrompt.contains("hello", ignoreCase = true) ->
-                "你好，我是 MagicWX 内置体验模型。当前回复在本机生成，无需下载外部权重。"
+                "$GUEST_TITLE 安好，$SELF_TITLE 是 MagicWX 店中常驻的内置体验模型。此番回话皆在本机轻轻生成，无需另下外部权重，客官可先坐下尝个鲜。"
             safePrompt.contains("模型") ->
-                "MagicWX 默认内置一个体验模型；当前通过验证的外部模型是 Qwen3、Qwen2.5 和 SmolLM2，可在模型卡片中下载后运行。"
+                "$GUEST_TITLE 若想换个模型，$SELF_TITLE 替您记着：店里先备了内置体验模型；外部模型需在卡片中下载好，方可开席细聊。"
             safePrompt.contains("下载") ->
-                "下载大模型时可以返回模型选择页，后台服务会继续下载并通过常驻通知显示进度。"
+                "$GUEST_TITLE 莫急，大模型下载时可先回前厅逛逛。后台常驻通知会替您盯着进度，待包裹落稳，$SELF_TITLE 再请您入座开聊。"
             else ->
-                "我已收到：$safePrompt。内置体验模型用于验证聊天、流式输出、重置和切换流程；真实大模型请下载对应 ONNX 包后使用。"
+                "$GUEST_TITLE 的话，$SELF_TITLE 已细细听见：$safePrompt。此处先陪您试试聊天、流式输出、重试与切换；若要更强本领，还请下载已验证模型。"
         }
         val maxChars = (maxTokens.coerceAtLeast(16) * 2).coerceAtMost(baseReply.length)
         return baseReply.take(maxChars)                        // 让 maxTokens 对体验输出仍有约束

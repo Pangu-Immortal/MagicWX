@@ -1,22 +1,19 @@
 # MagicWX
 
-MagicWX is an Android 17 local LLM inference prototype built with Kotlin, Jetpack Compose, Material3, ONNX Runtime Android, and MediaPipe LLM Inference. It focuses on offline AI model selection, verified local model package checks, runtime-specific loading, and a simple on-device chat flow.
+MagicWX is an Android local AI app built with Kotlin, Jetpack Compose, and Material3. It combines fully offline text chat (RWKV / ONNX / MediaPipe runtimes) with on-device Stable Diffusion image generation (SD1.5 CPU pipeline via a native MNN backend), covering offline model selection, verified package checks, runtime gating, chat, and a complete image-generation workspace (txt2img / img2img / inpaint, mask painting, cropping, and persistent history).
 
-Keywords: Android local LLM, Android 17 AI app, Jetpack Compose AI chat, ONNX Runtime Android, MediaPipe LLM Android, LiteRT LLM, offline LLM prototype, RWKV Android, TinyLlama Android, Qwen Android, SmolLM2 Android, local AI inference, 端侧大模型, 安卓离线 AI, 本地大模型推理.
+Keywords: Android local LLM, Android 17 AI app, Jetpack Compose AI chat, ONNX Runtime Android, MediaPipe LLM Android, LiteRT LLM, offline LLM, RWKV Android, Stable Diffusion Android, local image generation, MNN diffusion, 端侧大模型, 安卓离线 AI, 本地大模型推理, 安卓本地生图.
 
 ## Current Status
 
-- Android app prototype: available.
-- Latest prototype release: `v1.1.5`.
+- Android app: available.
+- Latest release: `v1.1.5`.
 - Android target: API 37 / Android 17.
-- Verified production-ready models: none yet.
-- Verified first-run path: built-in MagicWX experience model, no external download required.
-- Runtime adapters in code: `BUILTIN_TEXT`, `ONNX_TEXT_GENERATION`, and `LITERT_LM` via MediaPipe LLM Inference are implemented; llama.cpp/GGUF, MLC LLM, MNN-LLM, ASR, VAD, TTS, Vision, VLM, Piper, sherpa-onnx, NCNN, and diffusion pipelines remain gated candidates.
-- ONNX path in code: local text generation prototype with verified Transformer downloads and adapter-based loading.
-- LiteRT path in code: `.task` model packages load through MediaPipe LLM Inference and are validated independently from ONNX.
+- **Local image generation (GA on CPU)**: SD1.5 CPU pipeline verified end-to-end on Samsung SM-A566E — txt2img / img2img / inpaint all produce images; ~10-14s per 512×512 step (MNN, `-O3`, UNet fp16); prompt workspace with album import + cropping, mask painting, parameter panel, auto result page, and Room-persisted history. NPU/QNN pipelines (SD1.5 NPU, SDXL, Anima, upscaler) are registered and will open after QNN runtime integration.
+- Verified chat models: built-in MagicWX experience model (no download), RWKV-7 World 0.4B and other registered language models pass device validation.
+- Runtime adapters: `BUILTIN_TEXT`, `ONNX_TEXT_GENERATION`, `LITERT_LM` (MediaPipe), and the isolated native image backend (`libmagicwx_image_backend.so`, foreground-service-managed process on localhost:18081 with SSE streaming).
 - Background downloads: user-started foreground service with persistent progress notification and model-card progress state.
-- Transformer entries: experimental candidates that require model-specific tokenizer, input/output, dry-run, and golden-output validation before public support claims.
-- Multimodal scope: LLM, ASR, VAD, TTS, image understanding, VLM, and image generation candidates are tracked separately because each modality needs its own runtime pipeline.
+- Multimodal scope: ASR, VAD, TTS, image understanding, and VLM remain separate roadmap items.
 
 The repository intentionally distinguishes registered model candidates from verified GA support. Do not describe a model as supported until it has a complete package manifest, required assets, successful load, fixed-input dry-run, and device verification evidence.
 

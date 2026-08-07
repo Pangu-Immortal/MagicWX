@@ -1,6 +1,6 @@
 ## Why
 
-MagicWX v1.1.0 has been released, but README still lacks a current runtime screenshot section and model support claims must be proven with runtime evidence rather than compile-only checks.
+MagicWX v1.1.4 is the current Android 17 prototype candidate, and README model support claims must remain tied to runtime screenshots and device validation evidence rather than compile-only checks.
 
 ## What Changes
 

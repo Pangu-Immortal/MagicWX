@@ -6,6 +6,8 @@
  * - ModelRuntimeAdapter: 所有模型运行时 adapter 的统一接口
  * - BuiltinTextAdapter: 内置体验模型 adapter
  * - OnnxTextGenerationAdapter: ONNX Runtime 文本生成 adapter
+ * - LlamaCppAdapter: GGUF / llama.cpp 文本生成 adapter
+ * - QnnImageGenerationAdapter: QNN / NPU 生图 adapter（设备门禁 + 隔离后端进程）
  * - UnsupportedRuntimeAdapter: 未接入 runtime 的候选模型阻断 adapter
  * - ModelRuntimeAdapterFactory: 按 ModelInfo.adapterType 选择具体 adapter
  */
@@ -22,10 +24,15 @@ import com.qihao.open.rwkv.model.RWKVModel
 import com.qihao.open.rwkv.model.RWKVTokenizer
 import com.qihao.open.rwkv.model.RuntimeAdapterType
 import com.qihao.open.rwkv.model.TextGenerationEngine
+import com.qihao.open.rwkv.model.image.ImageGenerationEngine
+import com.qihao.open.rwkv.model.image.MediaPipeImageGenerationAdapter
+import com.qihao.open.rwkv.model.image.MnnImageGenerationAdapter
+import com.qihao.open.rwkv.model.image.QnnImageGenerationAdapter
 
 /** 模型加载结果 */
 sealed class RuntimeLoadResult {
     data class Text(val engine: TextGenerationEngine) : RuntimeLoadResult() // 已加载文本生成引擎
+    data class Image(val engine: ImageGenerationEngine) : RuntimeLoadResult() // 已加载图像生成引擎
     data class Unsupported(val reason: String) : RuntimeLoadResult()        // 当前 runtime 不支持
 }
 
@@ -130,6 +137,36 @@ object ModelRuntimeAdapterFactory {
             RuntimeAdapterType.LITERT_LM -> {
                 if (modelInfo.adapterAvailable) {
                     MediaPipeLlmAdapter()
+                } else {
+                    UnsupportedRuntimeAdapter(modelInfo.adapterType, modelInfo.unavailableReason)
+                }
+            }
+            RuntimeAdapterType.LLAMA_CPP -> {
+                if (modelInfo.adapterAvailable) {
+                    LlamaCppAdapter()
+                } else {
+                    UnsupportedRuntimeAdapter(modelInfo.adapterType, modelInfo.unavailableReason)
+                }
+            }
+            RuntimeAdapterType.MEDIAPIPE_IMAGE_GENERATION -> {
+                if (modelInfo.adapterAvailable) {
+                    MediaPipeImageGenerationAdapter()
+                } else {
+                    UnsupportedRuntimeAdapter(modelInfo.adapterType, modelInfo.unavailableReason)
+                }
+            }
+            RuntimeAdapterType.QNN_IMAGE_GENERATION -> {
+                // QNN 族 adapterAvailable 由设备 SoC 门禁决定（DeviceSocCapability）：
+                // 骁龙设备路由到 QNN 生图 adapter；非骁龙设备走未支持 adapter 并携带设备原因
+                if (modelInfo.adapterAvailable) {
+                    QnnImageGenerationAdapter()
+                } else {
+                    UnsupportedRuntimeAdapter(modelInfo.adapterType, modelInfo.unavailableReason)
+                }
+            }
+            RuntimeAdapterType.MNN -> {
+                if (modelInfo.adapterAvailable) {
+                    MnnImageGenerationAdapter()
                 } else {
                     UnsupportedRuntimeAdapter(modelInfo.adapterType, modelInfo.unavailableReason)
                 }

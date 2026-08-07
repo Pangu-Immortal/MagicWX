@@ -27,7 +27,8 @@ enum class ChatTemplate {
     DEEPSEEK_R1, // DeepSeek-R1 Distill，使用官方 <｜User｜>/<｜Assistant｜> 模板
     TINYLLAMA,  // TinyLlama Chat，使用 <|user|>/<|assistant|> 模板
     LLAMA3,     // Llama 3.2
-    GEMMA       // Gemma 3
+    GEMMA,      // Gemma 3
+    RWKV_USER_ASSISTANT // RWKV GGUF，使用 User:/Assistant: 简洁对话模板
 }
 
 class HFTokenizer(
@@ -459,6 +460,9 @@ class HFTokenizer(
 
             ChatTemplate.GEMMA ->                       // Gemma 3
                 "<start_of_turn>user\n$userMessage<end_of_turn>\n<start_of_turn>model\n"
+
+            ChatTemplate.RWKV_USER_ASSISTANT ->         // RWKV GGUF 官方卡片模板风格，避免 ChatML 控制符干扰
+                "<s>User: $userMessage\n\nAssistant:"
         }
     }
 

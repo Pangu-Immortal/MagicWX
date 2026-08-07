@@ -1,0 +1,193 @@
+diff --git a/3rdparty/SampleApp/src/QnnSampleApp.cpp b/3rdparty/SampleApp/src/QnnSampleApp.cpp
+--- a/3rdparty/SampleApp/src/QnnSampleApp.cpp
++++ b/3rdparty/SampleApp/src/QnnSampleApp.cpp
+@@ -8,6 +8,13 @@
+ 
+ #include <inttypes.h>
+ 
++#ifndef __hexagon__
++#include <fcntl.h>
++#include <sys/mman.h>
++#include <sys/stat.h>
++#include <unistd.h>
++#endif
++
+ #include <cstring>
+ #include <fstream>
+ #include <iostream>
+@@ -78,19 +85,19 @@
+ //  2. Read all input list paths provided
+ //      during creation.
+ sample_app::StatusCode sample_app::QnnSampleApp::initialize() {
+-  // Create Output Directory
+-#ifndef __hexagon__
+-  if (m_dumpOutputs && !::pal::FileOp::checkFileExists(m_outputPath) &&
+-      !pal::Directory::makePath(m_outputPath)) {
+-    exitWithMessage("Could not create output directory: " + m_outputPath, EXIT_FAILURE);
+-  }
+-#endif
+-  // Read Input File List
+-  bool readSuccess;
+-  std::tie(m_inputFileLists, m_inputNameToIndex, readSuccess) = readInputLists(m_inputListPaths);
+-  if (!readSuccess) {
+-    exitWithMessage("Could not read input lists", EXIT_FAILURE);
+-  }
++//   // Create Output Directory
++// #ifndef __hexagon__
++//   if (m_dumpOutputs && !::pal::FileOp::checkFileExists(m_outputPath) &&
++//       !pal::Directory::makePath(m_outputPath)) {
++//     exitWithMessage("Could not create output directory: " + m_outputPath, EXIT_FAILURE);
++//   }
++// #endif
++//   // Read Input File List
++//   bool readSuccess;
++//   std::tie(m_inputFileLists, m_inputNameToIndex, readSuccess) = readInputLists(m_inputListPaths);
++//   if (!readSuccess) {
++//     exitWithMessage("Could not read input lists", EXIT_FAILURE);
++//   }
+   // initialize logging in the backend
+   if (log::isLogInitialized()) {
+     auto logCallback = log::getLogCallback();
+@@ -334,25 +341,39 @@
+   }
+   uint64_t bufferSize{0};
+   std::shared_ptr<uint8_t> buffer{nullptr};
+-  // read serialized binary into a byte buffer
+-  tools::datautil::StatusCode status{tools::datautil::StatusCode::SUCCESS};
+-  std::tie(status, bufferSize) = tools::datautil::getFileSize(m_cachedBinaryPath);
+-  if (0 == bufferSize) {
+-    QNN_ERROR("Received path to an empty file. Nothing to deserialize.");
++  // Map the serialized binary read-only instead of copying it into an
++  // anonymous heap buffer. QNN only needs the bytes for the duration of
++  // contextCreateFromBinary, and the mapped pages are clean/file-backed so the
++  // kernel can reclaim them under memory pressure (re-faulting from storage)
++  // rather than forcing them into swap/zram. This lowers the peak resident
++  // footprint when deserializing large context binaries.
++  int fd = open(m_cachedBinaryPath.c_str(), O_RDONLY);
++  if (fd < 0) {
++    QNN_ERROR("Failed to open input file: %s", m_cachedBinaryPath.c_str());
+     return StatusCode::FAILURE;
+   }
+-  buffer = std::shared_ptr<uint8_t>(new uint8_t[bufferSize], std::default_delete<uint8_t[]>());
+-  if (!buffer) {
+-    QNN_ERROR("Failed to allocate memory.");
++  struct stat fileStat {};
++  if (0 != fstat(fd, &fileStat) || 0 == fileStat.st_size) {
++    QNN_ERROR("Received path to an empty file. Nothing to deserialize.");
++    close(fd);
+     return StatusCode::FAILURE;
+   }
++  bufferSize = static_cast<uint64_t>(fileStat.st_size);
+ 
+-  status = tools::datautil::readBinaryFromFile(
+-      m_cachedBinaryPath, reinterpret_cast<uint8_t*>(buffer.get()), bufferSize);
+-  if (status != tools::datautil::StatusCode::SUCCESS) {
+-    QNN_ERROR("Failed to read binary data.");
++  void* mapped = mmap(nullptr, bufferSize, PROT_READ, MAP_PRIVATE, fd, 0);
++  // The mapping keeps its own reference to the file, so the fd can be closed
++  // immediately; this holds regardless of whether mmap succeeded.
++  close(fd);
++  if (MAP_FAILED == mapped) {
++    QNN_ERROR("Failed to mmap binary file: %s", m_cachedBinaryPath.c_str());
+     return StatusCode::FAILURE;
+   }
++  // QNN scans the whole binary sequentially during deserialization; hint the
++  // kernel so readahead matches the access pattern.
++  madvise(mapped, bufferSize, MADV_SEQUENTIAL);
++  // Wrap in shared_ptr so every early-return path below unmaps automatically.
++  buffer = std::shared_ptr<uint8_t>(static_cast<uint8_t*>(mapped),
++                                    [bufferSize](uint8_t* p) { munmap(p, bufferSize); });
+ 
+   // inspect binary info
+   auto returnStatus = StatusCode::SUCCESS;
+diff --git a/3rdparty/SampleApp/src/QnnSampleApp.hpp b/3rdparty/SampleApp/src/QnnSampleApp.hpp
+--- a/3rdparty/SampleApp/src/QnnSampleApp.hpp
++++ b/3rdparty/SampleApp/src/QnnSampleApp.hpp
+@@ -82,7 +82,7 @@
+ 
+   StatusCode verifyFailReturnStatus(Qnn_ErrorHandle_t errCode);
+ 
+- private:
++//  private:
+   StatusCode extractBackendProfilingInfo(Qnn_ProfileHandle_t profileHandle);
+ 
+   StatusCode extractProfilingSubEvents(QnnProfile_EventId_t profileEventId);
+diff --git a/3rdparty/SampleApp/src/Utils/IOTensor.cpp b/3rdparty/SampleApp/src/Utils/IOTensor.cpp
+--- a/3rdparty/SampleApp/src/Utils/IOTensor.cpp
++++ b/3rdparty/SampleApp/src/Utils/IOTensor.cpp
+@@ -581,13 +581,37 @@
+   }
+   std::vector<size_t> dims;
+   fillDims(dims, QNN_TENSOR_GET_DIMENSIONS(tensor), QNN_TENSOR_GET_RANK(tensor));
+-  auto returnStatus   = StatusCode::SUCCESS;
+   size_t elementCount = datautil::calculateElementCount(dims);
+-  returnStatus        = allocateBuffer<float>(out, elementCount);
++  auto returnStatus   = allocateBuffer<float>(out, elementCount);
+   if (StatusCode::SUCCESS != returnStatus) {
+     QNN_ERROR("failure in allocateBuffer<float>");
+     return returnStatus;
+   }
++  returnStatus = convertToFloatInto(*out, tensor);
++  if (StatusCode::SUCCESS != returnStatus && *out != nullptr) {
++    QNN_DEBUG("freeing *out");
++    free(*out);
++    *out = nullptr;
++  }
++  return returnStatus;
++}
++
++// Convert a typed/quantized output tensor directly into a caller-owned float
++// buffer (sized to the tensor element count). Avoids the allocate + memcpy +
++// free dance the float** overload forces on callers that already have a
++// destination buffer.
++iotensor::StatusCode iotensor::IOTensor::convertToFloatInto(float* dst, Qnn_Tensor_t* tensor) {
++  if (nullptr == tensor) {
++    QNN_ERROR("tensors is nullptr");
++    return StatusCode::FAILURE;
++  }
++  // Alias so the existing *out-based conversion body writes straight into dst.
++  float* outBuf = dst;
++  float** out   = &outBuf;
++  std::vector<size_t> dims;
++  fillDims(dims, QNN_TENSOR_GET_DIMENSIONS(tensor), QNN_TENSOR_GET_RANK(tensor));
++  auto returnStatus   = StatusCode::SUCCESS;
++  size_t elementCount = datautil::calculateElementCount(dims);
+   switch (QNN_TENSOR_GET_DATA_TYPE(tensor)) {
+     case QNN_DATATYPE_UFIXED_POINT_8:
+       if (datautil::StatusCode::SUCCESS !=
+@@ -719,13 +743,7 @@
+       returnStatus = StatusCode::FAILURE;
+       break;
+   }
+-  if (StatusCode::SUCCESS != returnStatus) {
+-    QNN_DEBUG("freeing *out");
+-    if (*out != nullptr) {
+-      free(*out);
+-      *out = nullptr;
+-    }
+-  }
++  // dst is caller-owned; never freed here.
+   return returnStatus;
+ }
+ 
+diff --git a/3rdparty/SampleApp/src/Utils/IOTensor.hpp b/3rdparty/SampleApp/src/Utils/IOTensor.hpp
+--- a/3rdparty/SampleApp/src/Utils/IOTensor.hpp
++++ b/3rdparty/SampleApp/src/Utils/IOTensor.hpp
+@@ -71,7 +71,7 @@
+                                            size_t numInputTensors,
+                                            size_t numOutputTensors);
+ 
+- private:
++//  private:
+   PopulateInputTensorsRetType_t populateInputTensor(const std::vector<std::string> &filePaths,
+                                                     const size_t filePathsIndexOffset,
+                                                     const bool loopBackToStart,
+@@ -91,6 +91,8 @@
+ #ifndef __hexagon__
+   StatusCode convertToFloat(float **out, Qnn_Tensor_t *output);
+ 
++  StatusCode convertToFloatInto(float *dst, Qnn_Tensor_t *output);
++
+   StatusCode convertAndWriteOutputTensorInFloat(Qnn_Tensor_t *output,
+                                                 std::vector<std::string> outputPaths,
+                                                 std::string fileName,

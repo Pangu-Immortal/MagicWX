@@ -1,3 +1,22 @@
 <resources>
-    <string name="app_name">RWKV-Android</string>
+    <string name="app_name">MagicWX</string>
+    <!-- Tag 自动补全 badge 标签 -->
+    <string name="tag_alias_label">别名</string>
+    <string name="tag_correction_label">纠错</string>
+    <!-- 参数复现对话框 -->
+    <string name="reproduce_params_title">参数复现</string>
+    <string name="reproduce_params_hint">将使用以下参数触发新一轮生成</string>
+    <string name="reproduce_button">复现</string>
+    <string name="field_prompt">提示词</string>
+    <string name="field_negative_prompt">负向提示词</string>
+    <string name="field_steps">步数</string>
+    <string name="field_cfg">CFG</string>
+    <string name="field_seed">种子</string>
+    <string name="field_width">宽度</string>
+    <string name="field_height">高度</string>
+    <string name="field_scheduler">调度器</string>
+    <string name="field_denoise">降噪强度</string>
+    <string name="field_mode">模式</string>
+    <string name="field_model_id">模型</string>
+    <string name="cancel">取消</string>
 </resources>

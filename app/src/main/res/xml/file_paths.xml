@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 可见路径清单：
+  只暴露 filesDir/generated_images（生图结果与超分输出目录），
+  供 ACTION_SEND 分享时生成 content:// Uri；其余私有目录一律不外泄。
+-->
+<paths>
+    <files-path
+        name="generated_images"
+        path="generated_images/" />
+</paths>

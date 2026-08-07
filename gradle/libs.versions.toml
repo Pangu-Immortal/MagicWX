@@ -7,12 +7,18 @@ material = "1.12.0"
 constraintlayout = "2.2.1"
 onnxruntime = "1.28.0"
 mediapipeTasksGenai = "0.10.29"
+mediapipeTasksVisionImageGenerator = "0.10.26.1"
+protobuf = "4.26.1"
+javaLlamaCpp = "4.1.0"
 gson = "2.11.0"
 composeBom = "2026.06.01"
 activityCompose = "1.9.3"
 lifecycleRuntimeKtx = "2.8.7"
 lifecycleViewmodelCompose = "2.8.7"
 junit = "4.13.2"
+room = "2.7.0"                      # Room 持久化：生图历史记录
+datastore = "1.1.7"                 # DataStore Preferences：生图参数按模型持久化（对齐 local-dream）
+ksp = "2.2.10-2.0.2"                # KSP 版本与 kotlin 2.2.10 绑定；marker 在 gradlePluginPortal 可达
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -24,15 +30,24 @@ material = { group = "com.google.android.material", name = "material", version.r
 androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 mediapipe-tasks-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeTasksGenai" }
+mediapipe-tasks-vision-image-generator = { group = "com.google.mediapipe", name = "tasks-vision-image-generator", version.ref = "mediapipeTasksVisionImageGenerator" }
+protobuf-java = { group = "com.google.protobuf", name = "protobuf-java", version.ref = "protobuf" }
+java-llama-cpp = { group = "de.kherud", name = "llama", version.ref = "javaLlamaCpp" }
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 compose-ui = { group = "androidx.compose.ui", name = "ui" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core" }
 compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

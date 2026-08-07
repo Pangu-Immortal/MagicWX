@@ -14,3 +14,13 @@
 .cxx
 local.properties
 /.idea/
+
+# 第三方源码（pinned + 本地修改，体积大不入库；pin commit + 修改见 doc/开发文档.md）
+# MNN@3db3cc90 + OpenCL 补丁(OpenCLWrapper.cpp MAGICWX_OPENCL_LIB) + xtensor clang 修复(xexpression_traits.hpp || defined(__clang__)) + zstd@f9938c2 等
+app/src/main/cpp/third_party/
+
+# 参照仓库 + 本地缓存
+modules/
+.kotlin/
+.vscode/
+release/

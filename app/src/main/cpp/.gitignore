@@ -1,0 +1,3 @@
+# QNN 构建时由 CMake 从 QNN SDK 现场拷贝/打补丁生成（file(COPY) + git apply），
+# 不随仓库分发；SDK 缺席的 CPU-only 构建不会生成此目录。
+third_party/SampleApp/
