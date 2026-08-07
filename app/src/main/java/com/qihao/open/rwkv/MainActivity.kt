@@ -142,7 +142,6 @@ import com.qihao.open.rwkv.model.ModelArch
 import com.qihao.open.rwkv.model.ModelCapability
 import com.qihao.open.rwkv.model.ModelInfo
 import com.qihao.open.rwkv.model.ModelRegistry
-import com.qihao.open.rwkv.model.CustomModelImporter
 import com.qihao.open.rwkv.model.PinnedModels
 import com.qihao.open.rwkv.model.RuntimeAdapterType
 import com.qihao.open.rwkv.model.image.DeviceSocCapability
@@ -381,29 +380,9 @@ private fun ModelSelectScreen(
                 NpuGateBanner(modifier = Modifier.padding(bottom = 12.dp))
             }
 
-            // ---- 自定义模型导入：仅 CPU 生图 tab 展示 ----
+            // 自定义模型导入功能已移除（CustomModelImporter.kt 删除）；customModels 保留空列表供下方列表渲染兜底
             var customModels by remember { mutableStateOf<List<ModelInfo>>(emptyList()) }
             val context = LocalContext.current
-            if (selectedTab == HomeModelTab.CPU_IMAGE) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(
-                        onClick = {
-                            val scanned = CustomModelImporter.scanCustomModels(context)
-                            customModels = scanned
-                            if (scanned.isEmpty()) {
-                                Toast.makeText(context, "未发现自定义模型（请将模型目录放入 files/models/）", Toast.LENGTH_LONG).show()
-                            } else {
-                                Toast.makeText(context, "已导入 ${scanned.size} 个自定义模型", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    ) { Text("导入自定义模型") }
-                }
-            }
 
             // PinnedModels 观察：置顶状态变化时触发列表重排
             val pinnedIds by PinnedModels.observePinned().collectAsState(initial = emptyList())

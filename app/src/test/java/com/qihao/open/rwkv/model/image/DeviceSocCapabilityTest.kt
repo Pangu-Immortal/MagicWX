@@ -88,10 +88,11 @@ class DeviceSocCapabilityTest {
     }
 
     @Test
-    fun qnnRuntimeBuildGateBlocksCpuOnlyBuild() {
-        // 当前构建未集成 QNN SDK：QNN 管线族一律不可执行，报错文案契约固定
-        assertFalse("CPU-only 构建不得放行 QNN 管线", QnnRuntimeAvailability.canRunQnnPipeline())
-        assertFalse(QnnRuntimeAvailability.SDK_INTEGRATED)
+    fun qnnRuntimeBuildGateAllowsQnnAfterSdkIntegrated() {
+        // B 方案：改用 local-dream 预编译 libstable_diffusion_core.so（含 QNN 管线）+ assets/qnnlibs/
+        // 20 个 QNN .so 运行时，SDK 已集成，QNN 管线族可执行，门禁放行
+        assertTrue("B 方案 QNN 已集成，必须放行 QNN 管线", QnnRuntimeAvailability.canRunQnnPipeline())
+        assertTrue(QnnRuntimeAvailability.SDK_INTEGRATED)
         listOf("sd15npu", "sdxl", "anima", "upscaler").forEach { pipeline ->
             assertTrue("QNN 管线族判定必须覆盖: $pipeline", QnnRuntimeAvailability.isQnnPipeline(pipeline))
         }

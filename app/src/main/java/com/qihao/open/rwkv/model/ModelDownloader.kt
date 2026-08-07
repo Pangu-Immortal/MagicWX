@@ -104,8 +104,24 @@ class ModelDownloader private constructor(
         val modelDir = getModelDir(modelInfo.id)
         val probe = modelInfo.requiredRuntimeFiles.firstOrNull() ?: return modelDir // 无布局约束的模型直接用顶层目录
         if (File(modelDir, probe).isFile) return modelDir      // 平铺布局优先，兼容 local-dream 式解压
-        val childDirs = modelDir.listFiles()?.filter { it.isDirectory }.orEmpty()
-        return childDirs.firstOrNull { child -> File(child, probe).isFile } ?: modelDir
+        // 递归查找 probe 文件所在目录（BFS 优先浅层）。CPU 模型为一层嵌套（AnythingV5/），
+        // 此前单层探针够用；NPU 模型为两层深 output_512/qnn_models_<suffix>/，必须递归才能命中。
+        return findDirContainingFile(modelDir, probe) ?: modelDir
+    }
+
+    /**
+     * BFS 递归查找包含目标文件的子目录，优先返回浅层命中（平铺 > 一层 > 两层）。
+     * 用于 zip 解压后模型文件位于任意深度子目录时的运行时目录定位。
+     */
+    private fun findDirContainingFile(root: File, targetName: String): File? {
+        val queue = ArrayDeque<File>()
+        root.listFiles()?.filter { it.isDirectory }?.let { queue.addAll(it) }
+        while (queue.isNotEmpty()) {
+            val dir = queue.removeFirst()
+            if (File(dir, targetName).isFile) return dir
+            dir.listFiles()?.filter { it.isDirectory }?.let { queue.addAll(it) }
+        }
+        return null
     }
 
     /**

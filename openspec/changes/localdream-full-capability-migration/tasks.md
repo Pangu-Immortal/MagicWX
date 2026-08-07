@@ -58,19 +58,21 @@
 
 ## Phase 3：多 Pipeline 后端（SDXL / Anima / QNN / NPU）
 
+> **B 方案落地（2026-08-07，v1.2.0）**：绕过高通专有 QNN SDK 编译头硬阻塞，改用 local-dream 预编译 `libstable_diffusion_core.so`（含 QNN 管线，MNN 静态链接，ELF 可执行文件非 JNI 库——local-dream 本就是 HTTP 进程隔离架构，与 MagicWX 同构）+ `assets/qnnlibs/` 20 个 QNN .so 运行时。MagicWX HTTP 架构 0 推翻，协议 100% 对齐（agent 核实），仅换可执行文件名 + 加 `prepareQnnRuntimeDir` 复制 QNN .so 到 `filesDir/qnn/` + `SDK_INTEGRATED=true`。cpp 自编译停用（externalNativeBuild 注释，源码保留备用）。详见 memory `b-plan-local-dream-so-swap`。
+
 ### 3.1 后端启动参数扩展
 - [x] ImageBackendService 支持 `--type` (sd15cpu|sd15npu|sdxl|anima|upscaler)、`--lib_dir`、`--patch`、`--lowram`、`--anima_seq_dit`（2026-08-06：native 后端全量对齐 local-dream main.cpp，17 参数逐项一致，MAGICWX_WITH_QNN 条件编译；QNN 类型在 CPU-only 构建以退出码 6 明确报错；--convert/safety_checker/upscaler_mode/embeddings/NSFW 全消费；zstd 已按 pin 入库）
 - [x] 按 model 的 `imageBackendType` 选择 pipeline 类型（Kotlin 接线随 NPU 批落地）
-- [ ] QNN runtime / HTP skel / 环境变量准备（**阻塞于高通专有 QNN SDK：需用户提供 QAIRT 2.39 安装包；CMake 已按 QNN_SDK_ROOT 门控就绪，SDK 到场即编**）
+- [x] QNN runtime / HTP skel / 环境变量准备（**2026-08-07 B方案**：改用 local-dream 预编译 libstable_diffusion_core.so 含 QNN 管线 + assets/qnnlibs/ 20 个 QNN .so（libQnnHtp/libQnnSystem/V68-V81 Stub+Skel），prepareQnnRuntimeDir 复制到 filesDir/qnn/ + LD_LIBRARY_PATH 加系统库路径 + DSP_LIBRARY_PATH，绕过 QNN SDK 编译头阻塞）
 
 ### 3.2 各 Pipeline 真实出图
-- [ ] SD1.5 NPU txt2img/img2img/inpaint/ultrafix（待 SDK + 骁龙 HTP 验证机）
-- [ ] SDXL txt2img/img2img/inpaint/ultrafix + aspect_ratio + lowram（同上）
-- [ ] Anima txt2img/img2img/inpaint + aspect_ratio + lowram + seq_dit（同上）
+- [x] SD1.5 NPU txt2img（**2026-08-07 vivo V2505A SM8850 8gen2**：libstable_diffusion_core.so + libQnnHtpV81Skel.so CDSP fastrpc domain 3，**2.5 秒出图** 512×512，mean=104.3/std=54.7 非黑有内容，自动跳结果页；img2img/inpaint/ultrafix NPU 链路待补）
+- [ ] SDXL txt2img/img2img/inpaint/ultrafix + aspect_ratio + lowram（需下载 8gen2 SDXL QNN 包）
+- [ ] Anima txt2img/img2img/inpaint + aspect_ratio + lowram + seq_dit（需下载 8gen2 Anima QNN 包）
 
 ### 3.3 运行时门禁
-- [ ] MNN SD1.5 CPU/OpenCL 门禁
-- [ ] QNN HTP 可用性门禁
+- [ ] MNN SD1.5 CPU/OpenCL 门禁（Samsung CPU 路径待连机验证 xtensor bad_alloc 是否复发）
+- [x] QNN HTP 可用性门禁（SDK_INTEGRATED=true 解除 ImageGenerationService 生成前门禁；设备 SoC 门禁 DeviceSocCapability.qnnSupported 保留，SM8850 8gen2 放行）
 - [ ] SDXL 8 Gen 3+ 设备门禁
 - [ ] Anima DiT split / 内存门禁
 - [ ] Upscaler 模型存在性门禁

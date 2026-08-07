@@ -54,8 +54,8 @@ android {
         applicationId = "com.qihao.open.rwkv"
         minSdk = 24
         targetSdk = 37
-        versionCode = 7
-        versionName = "1.1.5"
+        versionCode = 8
+        versionName = "1.2.0"
 
         ndk {
             // MNN Diffusion 与 llama.cpp 当前只随包提供 arm64 真机运行库，避免其它 ABI 被误判可安装。
@@ -72,6 +72,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // 暂用 debug 签名发布 release APK（项目无独立 release keystore，保证可安装；
+            // 后续接入正式 release keystore 时替换为 signingConfigs.create("release")）
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -107,12 +110,14 @@ android {
         }
     }
 
-    externalNativeBuild {
-        cmake {
-            // MagicWX 自有 JNI 只负责桥接已验证的预编译 MNN Diffusion runtime。
-            path = file("src/main/cpp/CMakeLists.txt")
-        }
-    }
+    // B 方案：改用 local-dream 预编译 libstable_diffusion_core.so（含 QNN 管线），停用自编译。
+    // cpp 源码（localdream/*.hpp + magicwx_image_backend.cpp + third_party）保留磁盘备用，
+    // 回退自编译时取消注释此块并按 doc/开发文档.md 恢复 third_party（拉取+apply 补丁）。
+    // externalNativeBuild {
+    //     cmake {
+    //         path = file("src/main/cpp/CMakeLists.txt")
+    //     }
+    // }
 
     testOptions {
         unitTests {

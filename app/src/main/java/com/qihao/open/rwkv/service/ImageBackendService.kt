@@ -167,6 +167,9 @@ class ImageBackendService : Service() {
                     Log.d(TAG, "复用已就绪的图片后端进程: modelId=$modelId")
                 } else {
                     stopBackendProcess("启动新图片后端前清理旧进程")
+                    // QNN 管线启动前把 assets/qnnlibs/ 的 20 个 QNN .so 复制到 libDir（filesDir/qnn），
+                    // 供 libstable_diffusion_core.so dlopen（对齐 local-dream BackendService.prepareRuntimeDir）
+                    if (libDir.isNotBlank()) prepareQnnRuntimeDir(libDir)
                     val process = launchBackendProcess(modelDir, pipelineType, libDir, noImg2img, useVPred, lowram, seqDit, patch)
                     backendProcess = process
                     monitorNativeLogs(process, modelId)
@@ -202,7 +205,9 @@ class ImageBackendService : Service() {
         patch: String
     ): Process {
         val nativeDir = applicationInfo.nativeLibraryDir
-        val executable = File(nativeDir, "libmagicwx_image_backend.so")
+        // B 方案：改用 local-dream 预编译 libstable_diffusion_core.so（含 QNN 管线，MNN 静态链接），
+        // 替代自编译 CPU-only 的 libmagicwx_image_backend.so。两者 HTTP 协议 100% 对齐，仅换可执行文件。
+        val executable = File(nativeDir, "libstable_diffusion_core.so")
         require(executable.isFile) { "缺少图片后端可执行文件: ${executable.absolutePath}" }
         executable.setExecutable(true, false)                   // 某些系统需要显式设置执行位
 
@@ -228,14 +233,50 @@ class ImageBackendService : Service() {
             .directory(filesDir)
             .redirectErrorStream(true)
             .apply {
-                // QNN 运行时库目录同时注入 LD_LIBRARY_PATH/DSP_LIBRARY_PATH（HTP skel 发现依赖），
-                // 对齐参照 BackendService 对 runtimeDir 的环境变量处理；CPU 管线保持仅 nativeDir
-                environment()["LD_LIBRARY_PATH"] = if (libDir.isNotBlank()) "$nativeDir:$libDir" else nativeDir
+                // LD_LIBRARY_PATH：QNN 管线加系统库路径（libQnnHtp.so 依赖 libcdsprpc.so 等系统库），
+                // 对齐 local-dream BackendService 的 runtimeDir+系统路径；CPU 管线仅 nativeDir
+                environment()["LD_LIBRARY_PATH"] = if (libDir.isNotBlank()) {
+                    "$nativeDir:$libDir:/system/lib64:/vendor/lib64:/vendor/lib64/egl"
+                } else nativeDir
                 if (libDir.isNotBlank()) {
                     environment()["DSP_LIBRARY_PATH"] = libDir
                 }
             }
             .start()
+    }
+
+    /**
+     * 从 assets/qnnlibs/ 复制 QNN 运行时 .so 到 libDir（filesDir/qnn）。
+     * 对齐参照 local-dream BackendService.prepareRuntimeDir：按文件大小判断是否需复制，
+     * 避免每次启动重写 ~132MB；复制后设可读可执行权限，供 libstable_diffusion_core.so
+     * 通过 --lib_dir 绝对路径 dlopen libQnnHtp.so/libQnnSystem.so 及 HTP skel。
+     * 仅 QNN 管线（libDir 非空）调用；CPU 管线无 QNN 依赖跳过。
+     */
+    private fun prepareQnnRuntimeDir(libDir: String) {
+        if (libDir.isBlank()) return
+        val runtimeDir = File(libDir).apply { if (!exists()) mkdirs() }
+        runCatching {
+            val qnnlibsAssets = assets.list("qnnlibs") ?: return
+            qnnlibsAssets.forEach { fileName ->
+                val targetLib = File(runtimeDir, fileName)
+                // 按大小判断是否需复制，避免每次启动重写 132MB（对齐 prepareRuntimeDir）
+                val needsCopy = !targetLib.exists() || run {
+                    val assetSize = assets.open("qnnlibs/$fileName").use { it.available().toLong() }
+                    targetLib.length() != assetSize
+                }
+                if (needsCopy) {
+                    assets.open("qnnlibs/$fileName").use { input ->
+                        targetLib.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    Log.d(TAG, "复制 QNN 库到运行时目录: $fileName")
+                }
+                targetLib.setReadable(true, true)
+                targetLib.setExecutable(true, true)
+            }
+            Log.i(TAG, "QNN 运行时库准备完成: ${runtimeDir.absolutePath}")
+        }.onFailure { error ->
+            Log.e(TAG, "复制 QNN 运行时库失败: ${error.message}", error)
+        }
     }
 
     /** 将 native stdout/stderr 转发到 logcat，便于定位崩溃前最后阶段 */

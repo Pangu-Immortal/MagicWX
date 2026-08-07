@@ -140,14 +140,17 @@ object DeviceSocCapability {
  * QNN 运行时构建侧可用性。
  *
  * 设备门禁（DeviceSocCapability）回答"硬件能不能"，本对象回答"当前构建有没有"：
- * QNN SDK 尚未集成，构建产物只含 CPU 管线；Kotlin 层先按完整形态接线，
- * QNN SDK 集成后把 SDK_INTEGRATED 置 true，并同步移除 ImageGenerationService
+ * B 方案改用 local-dream 预编译 libstable_diffusion_core.so（含 QNN 管线）+ assets/qnnlibs/
+ * 20 个 QNN .so 运行时，QNN 管线可执行；SDK_INTEGRATED=true 解除 ImageGenerationService
  * 中"该模型需要 QNN 运行时支持"的生成前门禁。
  */
 object QnnRuntimeAvailability {
 
-    /** QNN SDK 集成状态：false 表示当前构建为 CPU-only，QNN 管线不可执行 */
-    const val SDK_INTEGRATED = false
+    /**
+     * QNN 运行时集成状态：B 方案改用 local-dream 预编译 libstable_diffusion_core.so（含 QNN 管线）
+     * + assets/qnnlibs/ 20 个 QNN .so 运行时，QNN 管线可执行。
+     */
+    const val SDK_INTEGRATED = true
 
     /** 生成前门禁统一报错文案（dex 核验关键字："需要 QNN 运行时支持"） */
     const val QNN_RUNTIME_REQUIRED_MESSAGE =
