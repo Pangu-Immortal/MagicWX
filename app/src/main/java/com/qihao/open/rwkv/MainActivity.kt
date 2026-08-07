@@ -363,12 +363,8 @@ private fun ModelSelectScreen(
                 modifier = Modifier.padding(bottom = 12.dp)
             )
 
-            // 本地离线能力说明条：NPU 非骁龙 tab 由 NpuGateBanner 单行提示，不重复显示能力检测条
-            if (!(selectedTab == HomeModelTab.NPU_IMAGE && !DeviceSocCapability.qnnSupported())) {
-                ImageInferenceBackendBanner(
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-            }
+            // 上部提示精简：各 tab 只保留单行说明（TabIntroCard 或 NPU 非骁龙 NpuGateBanner），
+            // 移除 ImageInferenceBackendBanner 能力检测条（之前占 2 行，用户反馈上部提示太多）
 
             // NPU tab 非骁龙由 NpuGateBanner 单行提示，不再显示 TabIntroCard（避免 NPU 提示占多行）
             // 其余 tab（语言/CPU/NPU 骁龙）显示 TabIntroCard 说明
