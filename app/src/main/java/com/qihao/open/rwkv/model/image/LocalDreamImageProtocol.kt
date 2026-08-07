@@ -47,7 +47,10 @@ data class LocalDreamImageRequest(
     val ultrafixTileSize: Int = 512,                                    // UltraFix tile 大小
     val ultrafixSteps: Int = 10,                                        // UltraFix 修复步数
     val ultrafixDenoiseSteps: Int = 4,                                  // UltraFix 降噪步数
-    val ultrafixQualityDenoise: Boolean = true                          // UltraFix 是否使用质量提示词
+    val ultrafixQualityDenoise: Boolean = true,                         // UltraFix 是否使用质量提示词
+    val lowram: Boolean = false,                                         // SDXL/Anima 低内存模式：逐阶段加载释放，降低 peak 内存占用
+    val seqDit: Boolean = false,                                         // Anima 序列化 DiT：两张 DiT 分片不共存，12GB 设备可运行
+    val patch: String = ""                                               // 分辨率 patch 文件路径（sd15npu 非 512 尺寸时下发）
 ) {
     /** 检查请求是否满足当前模式的最小输入要求 */
     fun validate(): String {

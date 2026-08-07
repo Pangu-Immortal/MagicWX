@@ -52,6 +52,9 @@ class ImageBackendService : Service() {
         private const val EXTRA_LIB_DIR = "lib_dir"               // QNN 运行时库目录，对齐 local-dream --lib_dir
         private const val EXTRA_NO_IMG2IMG = "no_img2img"        // 跳过 VAE encoder，阻断 img2img/inpaint
         private const val EXTRA_USE_V_PRED = "use_v_pred"        // v-prediction 模型
+        private const val EXTRA_LOWRAM = "lowram"                 // SDXL/Anima 低内存模式
+        private const val EXTRA_SEQ_DIT = "seq_dit"               // Anima 序列化 DiT
+        private const val EXTRA_PATCH = "patch"                   // 分辨率 patch 文件路径
         private const val CHANNEL_ID = "image_backend"
         private const val NOTIFICATION_ID = 2001
         const val PORT = 18081
@@ -68,7 +71,10 @@ class ImageBackendService : Service() {
             pipelineType: String,
             libDir: String = "",
             noImg2img: Boolean = false,
-            useVPred: Boolean = false
+            useVPred: Boolean = false,
+            lowram: Boolean = false,
+            seqDit: Boolean = false,
+            patch: String = ""
         ): Intent {
             return Intent(context, ImageBackendService::class.java).apply {
                 action = ACTION_START
@@ -78,6 +84,9 @@ class ImageBackendService : Service() {
                 putExtra(EXTRA_LIB_DIR, libDir)
                 putExtra(EXTRA_NO_IMG2IMG, noImg2img)
                 putExtra(EXTRA_USE_V_PRED, useVPred)
+                putExtra(EXTRA_LOWRAM, lowram)
+                putExtra(EXTRA_SEQ_DIT, seqDit)
+                putExtra(EXTRA_PATCH, patch)
             }
         }
 
@@ -130,6 +139,9 @@ class ImageBackendService : Service() {
         val libDir = intent.getStringExtra(EXTRA_LIB_DIR).orEmpty()      // QNN 运行时库目录，CPU 管线为空
         val noImg2img = intent.getBooleanExtra(EXTRA_NO_IMG2IMG, false)
         val useVPred = intent.getBooleanExtra(EXTRA_USE_V_PRED, false)
+        val lowram = intent.getBooleanExtra(EXTRA_LOWRAM, false)
+        val seqDit = intent.getBooleanExtra(EXTRA_SEQ_DIT, false)
+        val patch = intent.getStringExtra(EXTRA_PATCH).orEmpty()
         if (modelId.isBlank() || modelDir.isBlank()) {
             Log.e(TAG, "图片后端启动失败，参数为空: modelId=$modelId modelDir=$modelDir")
             stopSelf(startId)
@@ -155,7 +167,7 @@ class ImageBackendService : Service() {
                     Log.d(TAG, "复用已就绪的图片后端进程: modelId=$modelId")
                 } else {
                     stopBackendProcess("启动新图片后端前清理旧进程")
-                    val process = launchBackendProcess(modelDir, pipelineType, libDir, noImg2img, useVPred)
+                    val process = launchBackendProcess(modelDir, pipelineType, libDir, noImg2img, useVPred, lowram, seqDit, patch)
                     backendProcess = process
                     monitorNativeLogs(process, modelId)
                     waitForHealth()
@@ -184,7 +196,10 @@ class ImageBackendService : Service() {
         pipelineType: String,
         libDir: String,
         noImg2img: Boolean,
-        useVPred: Boolean
+        useVPred: Boolean,
+        lowram: Boolean,
+        seqDit: Boolean,
+        patch: String
     ): Process {
         val nativeDir = applicationInfo.nativeLibraryDir
         val executable = File(nativeDir, "libmagicwx_image_backend.so")
@@ -205,6 +220,9 @@ class ImageBackendService : Service() {
         }
         if (noImg2img) command += "--no_img2img"
         if (useVPred) command += "--use_v_pred"
+        if (lowram) command += "--lowram"                               // SDXL/Anima 低内存模式：逐阶段加载释放
+        if (seqDit) command += "--anima_seq_dit"                        // Anima 序列化 DiT：两张分片不共存
+        if (patch.isNotBlank()) command += listOf("--patch", patch)     // 分辨率 patch 文件路径
         Log.d(TAG, "启动图片后端进程: ${command.joinToString(" ")}")
         return ProcessBuilder(command)
             .directory(filesDir)

@@ -1057,6 +1057,9 @@ fun ImageGenerationScreen(
     var ultrafixSteps by remember { mutableStateOf(10) }
     var ultrafixDenoiseSteps by remember { mutableStateOf(4) }
     var ultrafixQualityDenoise by remember { mutableStateOf(true) }
+    var lowram by remember { mutableStateOf(false) }                     // SDXL/Anima 低内存模式
+    var seqDit by remember { mutableStateOf(false) }                     // Anima 序列化 DiT
+    var patch by remember { mutableStateOf("") }                         // 当前分辨率 patch 文件路径：NPU 模型非 512 尺寸时由后端回填
     var importedImage by remember { mutableStateOf<LocalDreamImportedImage?>(null) }
     var importedMask by remember { mutableStateOf<LocalDreamImportedImage?>(null) }
 
@@ -1105,6 +1108,9 @@ fun ImageGenerationScreen(
         ultrafixSteps = 10
         ultrafixDenoiseSteps = 4
         ultrafixQualityDenoise = true
+        lowram = false                                                 // 重置低内存模式
+        seqDit = false                                                 // 重置序列化 DiT
+        patch = ""                                                     // 清空 patch 路径
         importedImage = null
         importedMask = null
         Log.d(TAG, "已重置生图参数到模型默认值: modelId=$modelId")
@@ -1187,17 +1193,51 @@ fun ImageGenerationScreen(
             ultrafixSteps = params.ultrafixSteps
             ultrafixDenoiseSteps = params.ultrafixDenoiseSteps
             ultrafixQualityDenoise = params.ultrafixQualityDenoise
+            lowram = params.lowram
+            seqDit = params.seqDit
+            patch = params.patch
             Log.d(TAG, "已加载生图参数存档: modelId=$modelId")
         } else {
             Log.d(TAG, "无参数存档，使用模型专属默认: modelId=$modelId")
         }
         prefsLoaded = true
     }
+    // ---- NPU 分辨率 patch 检测：按当前模型目录和宽高查找可用的 patch 文件 ----
+    LaunchedEffect(modelId, width, height, prefsLoaded) {
+        if (!prefsLoaded || modelId.isBlank()) return@LaunchedEffect
+        val backendType = currentModelInfo?.imageBackendType.orEmpty()
+        if (backendType !in listOf("sd15npu", "sdxl", "anima")) {
+            patch = ""
+            return@LaunchedEffect
+        }
+        // 仅在非 512 尺寸时检查 patch 文件（对齐参照 BackendService 的 patch 逻辑）
+        if (width == 512 && height == 512) {
+            patch = ""
+            return@LaunchedEffect
+        }
+        val downloader = com.qihao.open.rwkv.model.ModelDownloader(context.applicationContext)
+        val modelDir = runCatching { downloader.getRuntimeDirectory(currentModelInfo!!) }.getOrNull()
+        if (modelDir == null) {
+            patch = ""
+            return@LaunchedEffect
+        }
+        // 按参照命名规则查找 patch 文件：<size>.patch 或 <width>x<height>.patch
+        val patchFile = when {
+            width == height -> {
+                val squarePatch = java.io.File(modelDir, "${width}.patch")
+                if (squarePatch.isFile) squarePatch else java.io.File(modelDir, "${width}x${height}.patch")
+            }
+            else -> java.io.File(modelDir, "${width}x${height}.patch")
+        }
+        patch = if (patchFile.isFile) patchFile.absolutePath else ""
+        Log.d(TAG, "NPU patch 检测: size=${width}x${height}, found=${patch.ifBlank { "无" }}")
+    }
     LaunchedEffect(
         modelId, prefsLoaded, promptText, negativePromptText, steps, cfg, seedText,
         width, height, scheduler, aspectRatio, denoiseStrength, batchCount,
         showDiffusionProcess, previewStride, outputFormat,
-        ultrafixSteps, ultrafixDenoiseSteps, ultrafixQualityDenoise
+        ultrafixSteps, ultrafixDenoiseSteps, ultrafixQualityDenoise,
+        lowram, seqDit, patch
     ) {
         if (!prefsLoaded || modelId.isBlank()) return@LaunchedEffect  // 加载完成前不保存，避免默认值覆盖存档
         kotlinx.coroutines.delay(500)                                 // 防抖：停止编辑 500ms 后落盘
@@ -1220,11 +1260,15 @@ fun ImageGenerationScreen(
                 outputFormatWire = outputFormat.wireValue,
                 ultrafixSteps = ultrafixSteps,
                 ultrafixDenoiseSteps = ultrafixDenoiseSteps,
-                ultrafixQualityDenoise = ultrafixQualityDenoise
+                ultrafixQualityDenoise = ultrafixQualityDenoise,
+                lowram = lowram,
+                seqDit = seqDit,
+                patch = patch
             )
         )
     }
     var showMaskEditor by remember { mutableStateOf(false) }   // 是否展示 mask 涂抹 overlay
+    var showUltrafixConfirmDialog by remember { mutableStateOf(false) } // UltraFix 确认对话框：结果页点击 Ultrafix 后弹出
     // 相册选图后先落到裁剪态：持有待裁剪源图与显示名；为空表示不在裁剪流中
     var pendingCrop by remember { mutableStateOf<PendingCropSource?>(null) }
     var pendingCropMode by remember { mutableStateOf(LocalDreamGenerationMode.IMAGE_TO_IMAGE) } // 裁剪确认后进入的生成模式
@@ -1349,7 +1393,10 @@ fun ImageGenerationScreen(
             ultrafixTileSize = maxOf(requestWidth, requestHeight),
             ultrafixSteps = ultrafixSteps,
             ultrafixDenoiseSteps = ultrafixDenoiseSteps,
-            ultrafixQualityDenoise = ultrafixQualityDenoise
+            ultrafixQualityDenoise = ultrafixQualityDenoise,
+            lowram = lowram,
+            seqDit = seqDit,
+            patch = patch
         )
     }
 
@@ -1481,6 +1528,12 @@ fun ImageGenerationScreen(
                     onUltrafixDenoiseStepsChange = { ultrafixDenoiseSteps = it },
                     ultrafixQualityDenoise = ultrafixQualityDenoise,
                     onUltrafixQualityDenoiseChange = { ultrafixQualityDenoise = it },
+                    lowram = lowram,
+                    onLowramChange = { lowram = it },
+                    seqDit = seqDit,
+                    onSeqDitChange = { seqDit = it },
+                    patch = patch,
+                    imageBackendType = currentModelInfo?.imageBackendType.orEmpty(),
                     importedImage = importedImage,
                     importedMask = importedMask,
                     onSelectImage = { imagePickerLauncher.launch("image/*") },
@@ -1532,17 +1585,16 @@ fun ImageGenerationScreen(
                     lastRequest = lastRequest,
                     inpaintBlendContext = inpaintBlendContext,  // 保存 inpaint 结果时羽化贴回原图
                     history = history,                           // P2: 生图历史，供底部缩略图条
+                    imageBackendType = currentModelInfo?.imageBackendType.orEmpty(), // NPU 模型才显示 Ultrafix 按钮
                     onGoToPrompt = { selectedRunTab = LocalDreamRunTab.PROMPT },
                     onRetry = { submitGeneration() },
                     onCopyParams = { copyLocalDreamParamsToClipboard(context, lastRequest ?: currentRequest()) },
                     onShowParams = { showParamsDialog = true },
                     onUpscale = onUpscale,
                     onUltrafix = {
-                        // 优先把当前结果图喂为 UltraFix 输入图（免重新选图）；
-                        // 无结果图/解码失败时保留原行为：仅切模式跳页
-                        if (!feedOutputImageTo(LocalDreamGenerationMode.ULTRAFIX)) {
-                            generationMode = LocalDreamGenerationMode.ULTRAFIX
-                            selectedRunTab = LocalDreamRunTab.PROMPT
+                        // 结果页点击 Ultrafix：先弹出确认对话框展示 UltraFix 参数，确认后再喂图生成
+                        if (state.outputPath.isNotBlank()) {
+                            showUltrafixConfirmDialog = true
                         }
                     },
                     onSendToImg2Img = {
@@ -1591,6 +1643,9 @@ fun ImageGenerationScreen(
                         ultrafixSteps = request.ultrafixSteps
                         ultrafixDenoiseSteps = request.ultrafixDenoiseSteps
                         ultrafixQualityDenoise = request.ultrafixQualityDenoise
+                        lowram = request.lowram
+                        seqDit = request.seqDit
+                        patch = request.patch
                         selectedRunTab = LocalDreamRunTab.PROMPT
                     },
                     onCopyParams = { request -> copyLocalDreamParamsToClipboard(context, request) },
@@ -1829,6 +1884,49 @@ fun ImageGenerationScreen(
             modifier = Modifier.testTag("stop-generation-confirm-dialog")
         )
     }
+    // UltraFix 确认对话框：结果页点击 Ultrafix 后弹出，展示当前 UltraFix 参数并确认
+    if (showUltrafixConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showUltrafixConfirmDialog = false },
+            title = { Text("UltraFix 修复") },
+            text = {
+                Column {
+                    Text("对当前结果图执行 tiled img2img 修复。")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("修复步数: $ultrafixSteps")
+                    Text("降噪步数: $ultrafixDenoiseSteps")
+                    Text("质量提示词: ${if (ultrafixQualityDenoise) "开启" else "关闭"}")
+                    Text("Tile 大小: ${maxOf(
+                        importedImage?.width ?: width,
+                        importedImage?.height ?: height
+                    )}")
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showUltrafixConfirmDialog = false
+                        // 喂图 + 切模式 + 生成：对齐参照 ModelRunScreen.startUltrafix
+                        if (feedOutputImageTo(LocalDreamGenerationMode.ULTRAFIX)) {
+                            submitGeneration()
+                        } else {
+                            // 无结果图/解码失败兜底：仅切模式跳页
+                            generationMode = LocalDreamGenerationMode.ULTRAFIX
+                            selectedRunTab = LocalDreamRunTab.PROMPT
+                        }
+                    },
+                    modifier = Modifier.testTag("ultrafix-confirm-button")
+                ) { Text("开始修复") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showUltrafixConfirmDialog = false },
+                    modifier = Modifier.testTag("ultrafix-cancel-button")
+                ) { Text("取消") }
+            },
+            modifier = Modifier.testTag("ultrafix-confirm-dialog")
+        )
+    }
     // 重置参数确认弹窗：对齐参照 AdvancedSettingsDialog.onReset，弹确认后恢复全部参数
     if (showResetConfirmDialog) {
         AlertDialog(
@@ -1958,6 +2056,9 @@ fun ImageGenerationScreen(
                                 "ultrafix_steps" -> ultrafixSteps = value.toIntOrNull() ?: ultrafixSteps
                                 "ultrafix_denoise_steps" -> ultrafixDenoiseSteps = value.toIntOrNull() ?: ultrafixDenoiseSteps
                                 "ultrafix_quality_denoise" -> ultrafixQualityDenoise = value.toBooleanStrictOrNull() ?: ultrafixQualityDenoise
+                                "lowram" -> lowram = value.toBooleanStrictOrNull() ?: lowram
+                                "seq_dit" -> seqDit = value.toBooleanStrictOrNull() ?: seqDit
+                                "patch" -> patch = value
                             }
                         }
                         importParamsDialogVisible = false
@@ -2081,6 +2182,12 @@ private fun LocalDreamPromptPage(
     onUltrafixDenoiseStepsChange: (Int) -> Unit,
     ultrafixQualityDenoise: Boolean,
     onUltrafixQualityDenoiseChange: (Boolean) -> Unit,
+    lowram: Boolean,                                                         // SDXL/Anima 低内存模式
+    onLowramChange: (Boolean) -> Unit,                                       // 低内存模式切换回调
+    seqDit: Boolean,                                                         // Anima 序列化 DiT
+    onSeqDitChange: (Boolean) -> Unit,                                       // 序列化 DiT 切换回调
+    patch: String,                                                           // 当前分辨率 patch 文件路径
+    imageBackendType: String,                                                // 当前模型后端类型：用于条件显示 NPU 专属控件
     importedImage: LocalDreamImportedImage?,
     importedMask: LocalDreamImportedImage?,
     onSelectImage: () -> Unit,
@@ -2205,6 +2312,12 @@ private fun LocalDreamPromptPage(
                 onUltrafixDenoiseStepsChange = onUltrafixDenoiseStepsChange,
                 ultrafixQualityDenoise = ultrafixQualityDenoise,
                 onUltrafixQualityDenoiseChange = onUltrafixQualityDenoiseChange,
+                lowram = lowram,
+                onLowramChange = onLowramChange,
+                seqDit = seqDit,
+                onSeqDitChange = onSeqDitChange,
+                patch = patch,
+                imageBackendType = imageBackendType,
                 onReset = onReset
             )
         }
@@ -2507,6 +2620,12 @@ private fun LocalDreamAdvancedCard(
     onUltrafixDenoiseStepsChange: (Int) -> Unit,
     ultrafixQualityDenoise: Boolean,
     onUltrafixQualityDenoiseChange: (Boolean) -> Unit,
+    lowram: Boolean,                                                         // SDXL/Anima 低内存模式
+    onLowramChange: (Boolean) -> Unit,                                       // 低内存模式切换回调
+    seqDit: Boolean,                                                         // Anima 序列化 DiT
+    onSeqDitChange: (Boolean) -> Unit,                                       // 序列化 DiT 切换回调
+    patch: String,                                                           // 当前分辨率 patch 文件路径
+    imageBackendType: String,                                                // 当前模型后端类型：用于条件显示 NPU 专属控件
     onReset: () -> Unit                                                       // 重置参数到模型默认值
 ) {
     LocalDreamSectionCard(title = "高级与预览") {
@@ -2585,6 +2704,85 @@ private fun LocalDreamAdvancedCard(
                 onCheckedChange = onUltrafixQualityDenoiseChange,
                 modifier = Modifier.testTag("localdream-ultrafix-quality-switch")
             )
+        }
+        // ---- NPU 专属控件：仅 SDXL/Anima/sd15npu 后端显示 ----
+        val isNpuBackend = imageBackendType in listOf("sdxl", "anima", "sd15npu")
+        if (isNpuBackend) {
+            // SDXL 低内存模式开关：仅 SDXL 模型显示
+            if (imageBackendType == "sdxl") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("SDXL 低内存模式", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "逐阶段加载释放模型，降低 peak 内存占用。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = lowram,
+                        onCheckedChange = onLowramChange,
+                        modifier = Modifier.testTag("localdream-lowram-switch")
+                    )
+                }
+            }
+            // Anima 低内存模式 + 序列化 DiT 开关：仅 Anima 模型显示
+            if (imageBackendType == "anima") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Anima 低内存模式", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "逐阶段加载释放模型，降低 peak 内存占用。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = lowram,
+                        onCheckedChange = onLowramChange,
+                        modifier = Modifier.testTag("localdream-lowram-switch")
+                    )
+                }
+                // 序列化 DiT：仅在 lowram 开启时显示（对齐参照 anima_seq_dit 仅在 anima_lowram 开启后可见）
+                if (lowram) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("序列化 DiT", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "两张 DiT 分片不共存，12GB 设备可运行 Anima 低内存。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = seqDit,
+                            onCheckedChange = onSeqDitChange,
+                            modifier = Modifier.testTag("localdream-seq-dit-switch")
+                        )
+                    }
+                }
+            }
+            // 分辨率 patch 状态：显示当前 patch 文件路径（如有）
+            if (patch.isNotBlank()) {
+                Text(
+                    text = "分辨率 patch: ${java.io.File(patch).name}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.testTag("localdream-patch-status")
+                )
+            }
         }
         // 重置参数按钮：弹确认后恢复全部参数到模型默认值，对齐参照 AdvancedSettingsDialog.onReset
         OutlinedButton(
@@ -2723,6 +2921,7 @@ private fun LocalDreamResultPage(
     lastRequest: LocalDreamImageRequest?,
     inpaintBlendContext: InpaintBlendContext?, // inpaint 贴回上下文：非空时保存前把结果羽化贴回原图
     history: List<HistoryEntity> = emptyList(), // P2: 生图历史，供底部缩略图条
+    imageBackendType: String = "",              // 当前模型后端类型：NPU 模型才显示 Ultrafix 按钮
     onGoToPrompt: () -> Unit,
     onRetry: () -> Unit,
     onCopyParams: () -> Unit,
@@ -2868,7 +3067,14 @@ private fun LocalDreamResultPage(
                         onClick = onUpscale,
                         enabled = state.outputPath.isNotBlank() && !state.isUpscaling  // 超分中禁止重复触发
                     ) { Text(if (state.isUpscaling) "超分中…" else "超分") }
-                    OutlinedButton(onClick = onUltrafix, enabled = state.outputPath.isNotBlank()) { Text("UltraFix") }
+                    // UltraFix 按钮：仅 NPU 模型（sd15npu/sdxl/anima）显示，CPU 隐藏
+                    if (imageBackendType in listOf("sd15npu", "sdxl", "anima")) {
+                        OutlinedButton(
+                            onClick = onUltrafix,
+                            enabled = state.outputPath.isNotBlank(),
+                            modifier = Modifier.testTag("localdream-result-ultrafix-button")
+                        ) { Text("UltraFix") }
+                    }
                     // 结果图一键转图生图输入：免去重新选图步骤（内部喂图并跳提示词页）
                     OutlinedButton(
                         onClick = onSendToImg2Img,
@@ -3803,6 +4009,9 @@ private fun copyLocalDreamParamsToClipboard(context: android.content.Context, re
         appendLine("ultrafix_steps=${request.ultrafixSteps}")
         appendLine("ultrafix_denoise_steps=${request.ultrafixDenoiseSteps}")
         appendLine("ultrafix_quality_denoise=${request.ultrafixQualityDenoise}")
+        if (request.lowram) appendLine("lowram=${request.lowram}")
+        if (request.seqDit) appendLine("seq_dit=${request.seqDit}")
+        if (request.patch.isNotBlank()) appendLine("patch=${request.patch}")
     }
     val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("LocalDream 参数", text))

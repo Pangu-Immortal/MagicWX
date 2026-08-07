@@ -78,6 +78,9 @@ class ImageGenerationService : Service() {
         private const val EXTRA_ULTRAFIX_STEPS = "ultrafix_steps"
         private const val EXTRA_ULTRAFIX_DENOISE_STEPS = "ultrafix_denoise_steps"
         private const val EXTRA_ULTRAFIX_QUALITY_DENOISE = "ultrafix_quality_denoise"
+        private const val EXTRA_LOWRAM = "lowram"                          // SDXL/Anima 低内存模式
+        private const val EXTRA_SEQ_DIT = "seq_dit"                        // Anima 序列化 DiT
+        private const val EXTRA_PATCH = "patch"                            // 分辨率 patch 文件路径
         private const val CHANNEL_ID = "image_generation"
         private const val NOTIFICATION_ID = 2002
         private const val MEMORY_MODE_SAVING = 0
@@ -120,6 +123,9 @@ class ImageGenerationService : Service() {
                 putExtra(EXTRA_ULTRAFIX_STEPS, request.ultrafixSteps)
                 putExtra(EXTRA_ULTRAFIX_DENOISE_STEPS, request.ultrafixDenoiseSteps)
                 putExtra(EXTRA_ULTRAFIX_QUALITY_DENOISE, request.ultrafixQualityDenoise)
+                putExtra(EXTRA_LOWRAM, request.lowram)
+                putExtra(EXTRA_SEQ_DIT, request.seqDit)
+                putExtra(EXTRA_PATCH, request.patch)
             }
         }
 
@@ -265,7 +271,10 @@ class ImageGenerationService : Service() {
                     modelInfo.id,
                     modelDir.absolutePath,
                     pipelineType = pipelineType,
-                    libDir = libDir
+                    libDir = libDir,
+                    lowram = request.lowram,
+                    seqDit = request.seqDit,
+                    patch = request.patch
                 )
                 ContextCompat.startForegroundService(applicationContext, backendIntent)
                 waitForBackendHealth()
@@ -366,7 +375,10 @@ class ImageGenerationService : Service() {
             ultrafixTileSize = intent.getIntExtra(EXTRA_ULTRAFIX_TILE_SIZE, 512),            // UltraFix 默认 512 tile
             ultrafixSteps = intent.getIntExtra(EXTRA_ULTRAFIX_STEPS, 10),                    // UltraFix 默认 10 步
             ultrafixDenoiseSteps = intent.getIntExtra(EXTRA_ULTRAFIX_DENOISE_STEPS, 4),      // UltraFix 默认 4 步降噪
-            ultrafixQualityDenoise = intent.getBooleanExtra(EXTRA_ULTRAFIX_QUALITY_DENOISE, true) // 默认质量提示词修复
+            ultrafixQualityDenoise = intent.getBooleanExtra(EXTRA_ULTRAFIX_QUALITY_DENOISE, true), // 默认质量提示词修复
+            lowram = intent.getBooleanExtra(EXTRA_LOWRAM, false),                                // SDXL/Anima 低内存模式
+            seqDit = intent.getBooleanExtra(EXTRA_SEQ_DIT, false),                               // Anima 序列化 DiT
+            patch = intent.getStringExtra(EXTRA_PATCH).orEmpty()                                 // 分辨率 patch 文件路径
         )
     }
 

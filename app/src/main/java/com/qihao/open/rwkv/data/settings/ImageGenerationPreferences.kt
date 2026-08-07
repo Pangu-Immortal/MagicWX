@@ -53,7 +53,10 @@ data class ImageGenerationParams(
     val outputFormatWire: String = LocalDreamImageWireFormat.JPEG.wireValue,  // 输出格式 wire id
     val ultrafixSteps: Int = 10,                                              // UltraFix 修复步数
     val ultrafixDenoiseSteps: Int = 4,                                        // UltraFix 降噪步数
-    val ultrafixQualityDenoise: Boolean = true                                // UltraFix 是否用质量提示词
+    val ultrafixQualityDenoise: Boolean = true,                                // UltraFix 是否用质量提示词
+    val lowram: Boolean = false,                                                // SDXL/Anima 低内存模式
+    val seqDit: Boolean = false,                                                // Anima 序列化 DiT
+    val patch: String = ""                                                      // 分辨率 patch 文件路径
 )
 
 /** 按 modelId 读写生图参数的 DataStore 封装 */
@@ -81,6 +84,9 @@ class ImageGenerationPreferences(private val context: Context) {
     private fun ultrafixStepsKey(modelId: String) = intPreferencesKey("${modelId}_ultrafix_steps")
     private fun ultrafixDenoiseStepsKey(modelId: String) = intPreferencesKey("${modelId}_ultrafix_denoise_steps")
     private fun ultrafixQualityDenoiseKey(modelId: String) = booleanPreferencesKey("${modelId}_ultrafix_quality_denoise")
+    private fun lowramKey(modelId: String) = booleanPreferencesKey("${modelId}_lowram")
+    private fun seqDitKey(modelId: String) = booleanPreferencesKey("${modelId}_seq_dit")
+    private fun patchKey(modelId: String) = stringPreferencesKey("${modelId}_patch")
 
     /**
      * 读取指定模型的全量参数；完全没有存档（该模型从未保存过）时返回 null，
@@ -116,8 +122,8 @@ class ImageGenerationPreferences(private val context: Context) {
                         null
                     } else {
                         ImageGenerationParams(
-                            prompt = preferences[promptKey(modelId)] ?: fallback.prompt,
-                            negativePrompt = preferences[negativePromptKey(modelId)] ?: fallback.negativePrompt,
+                            prompt = preferences[promptKey(modelId)]?.takeIf { it.isNotBlank() } ?: fallback.prompt,
+                            negativePrompt = preferences[negativePromptKey(modelId)]?.takeIf { it.isNotBlank() } ?: fallback.negativePrompt,
                             steps = preferences[stepsKey(modelId)] ?: fallback.steps,
                             cfg = preferences[cfgKey(modelId)] ?: fallback.cfg,
                             seedText = preferences[seedTextKey(modelId)] ?: fallback.seedText,
@@ -132,7 +138,10 @@ class ImageGenerationPreferences(private val context: Context) {
                             outputFormatWire = preferences[outputFormatKey(modelId)] ?: fallback.outputFormatWire,
                             ultrafixSteps = preferences[ultrafixStepsKey(modelId)] ?: fallback.ultrafixSteps,
                             ultrafixDenoiseSteps = preferences[ultrafixDenoiseStepsKey(modelId)] ?: fallback.ultrafixDenoiseSteps,
-                            ultrafixQualityDenoise = preferences[ultrafixQualityDenoiseKey(modelId)] ?: fallback.ultrafixQualityDenoise
+                            ultrafixQualityDenoise = preferences[ultrafixQualityDenoiseKey(modelId)] ?: fallback.ultrafixQualityDenoise,
+                            lowram = preferences[lowramKey(modelId)] ?: fallback.lowram,
+                            seqDit = preferences[seqDitKey(modelId)] ?: fallback.seqDit,
+                            patch = preferences[patchKey(modelId)] ?: fallback.patch
                         )
                     }
                 }
@@ -175,6 +184,9 @@ class ImageGenerationPreferences(private val context: Context) {
                 preferences[ultrafixStepsKey(modelId)] = params.ultrafixSteps
                 preferences[ultrafixDenoiseStepsKey(modelId)] = params.ultrafixDenoiseSteps
                 preferences[ultrafixQualityDenoiseKey(modelId)] = params.ultrafixQualityDenoise
+                preferences[lowramKey(modelId)] = params.lowram
+                preferences[seqDitKey(modelId)] = params.seqDit
+                preferences[patchKey(modelId)] = params.patch
             }
             Log.d(TAG, "已保存生图参数: modelId=$modelId")
         }.onFailure { error ->
