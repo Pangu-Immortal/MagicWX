@@ -75,6 +75,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -84,6 +85,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -3095,7 +3097,7 @@ private fun LocalDreamProgressCard(
     }
 }
 
-/** LocalDream 结果页 */
+/** LocalDream 结果页：分类+分模型展示 + 魔法棒超分 FAB */
 @Composable
 private fun LocalDreamResultPage(
     state: ImageGenerationUiState,
@@ -3117,242 +3119,310 @@ private fun LocalDreamResultPage(
     val exportScope = rememberCoroutineScope()         // 保存到相册是 IO 挂起操作，需要协程作用域
     // 全屏预览目标：null 不显示遮罩；"output"=结果图，"upscaled"=超分图
     var fullscreenTarget by remember { mutableStateOf<String?>(null) }
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            LocalDreamSectionCard(title = "生成结果") {
-                when {
-                    state.outputPath.isNotBlank() -> {
-                        val bitmap = remember(state.outputPath) {
-                            BitmapFactory.decodeFile(state.outputPath)
+    // 模式过滤：null=全部，非空=按模式筛选历史缩略图
+    var resultModeFilter by remember { mutableStateOf<GenerationMode?>(null) }
+    // 按模式过滤后的历史记录
+    val filteredHistory = remember(history, resultModeFilter) {
+        val modeFilter = resultModeFilter
+        if (modeFilter == null) history
+        else history.filter { it.mode == modeFilter.name }
+    }
+    // 按模型 ID 分组历史记录
+    val groupedHistory = remember(filteredHistory) {
+        filteredHistory.groupBy { it.modelId.ifBlank { "未命名模型" } }
+    }
+    Box(modifier = modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // 模式分类 chips：对齐 local-dream 结果页分类展示
+            if (history.isNotEmpty()) {
+                item {
+                    LocalDreamSectionCard(title = "按模式筛选") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // 全部 chip
+                            if (resultModeFilter == null) {
+                                Button(
+                                    onClick = { resultModeFilter = null },
+                                    shape = RoundedCornerShape(9999.dp),
+                                    modifier = Modifier.testTag("result-mode-filter-all")
+                                ) { Text("全部") }
+                            } else {
+                                OutlinedButton(
+                                    onClick = { resultModeFilter = null },
+                                    shape = RoundedCornerShape(9999.dp)
+                                ) { Text("全部") }
+                            }
+                            // 各模式 chip
+                            listOf(
+                                GenerationMode.TXT2IMG to "文生图",
+                                GenerationMode.IMG2IMG to "图生图",
+                                GenerationMode.INPAINT to "局部重绘",
+                                GenerationMode.ULTRAFIX to "UltraFix"
+                            ).forEach { (mode, label) ->
+                                if (resultModeFilter == mode) {
+                                    Button(
+                                        onClick = { resultModeFilter = null },
+                                        shape = RoundedCornerShape(9999.dp),
+                                        modifier = Modifier.testTag("result-mode-filter-${mode.name.lowercase()}")
+                                    ) { Text(label) }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { resultModeFilter = mode },
+                                        shape = RoundedCornerShape(9999.dp)
+                                    ) { Text(label) }
+                                }
+                            }
                         }
-                        if (bitmap != null) {
+                    }
+                }
+            }
+            item {
+                LocalDreamSectionCard(title = "生成结果") {
+                    when {
+                        state.outputPath.isNotBlank() -> {
+                            val bitmap = remember(state.outputPath) {
+                                BitmapFactory.decodeFile(state.outputPath)
+                            }
+                            if (bitmap != null) {
+                                Image(
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = "生成图片",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(300.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        // 点击结果图进入全屏可缩放预览（ZoomableImageOverlay）
+                                        .clickable { fullscreenTarget = "output" }
+                                        .testTag("generated-image-preview")
+                                )
+                            }
+                            Text(
+                                text = "生成完成 · ${formatDuration(state.durationMillis)}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = state.outputPath,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.testTag("generated-image-path")
+                            )
+                        }
+                        state.errorMessage.isNotBlank() -> {
+                            Text(
+                                text = "生成失败：${state.errorMessage}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.testTag("image-generation-error")
+                            )
+                        }
+                        state.isGenerating -> {
+                            CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                            Text("生成中，请在提示词页查看实时进度。")
+                        }
+                        else -> {
+                            Text("暂无结果。先回到提示词页开始生成。")
+                            Button(onClick = onGoToPrompt, shape = RoundedCornerShape(12.dp)) {
+                                Text("去生成")
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                LocalDreamSectionCard(title = "快捷操作") {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // H1 结果导出闭环：MediaStore 写入相册 Pictures/MagicWX 目录。
+                        // inpaint 且具备贴回上下文时：先把结果按裁剪矩形羽化贴回原图再保存，
+                        // 让用户拿到"修改后的原照片"而不是孤立 512 结果块；贴回失败自动回退保存原结果
+                        OutlinedButton(
+                            onClick = {
+                                val outputPath = state.outputPath
+                                val blend = inpaintBlendContext
+                                exportScope.launch {
+                                    val blendedBitmap = if (blend != null) {
+                                        withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                val resultBitmap = BitmapFactory.decodeFile(outputPath)
+                                                    ?: error("无法解码结果图: $outputPath")
+                                                val composited = InpaintBlendUtils.blendInpaintResult(
+                                                    originalBitmap = blend.originalBitmap,
+                                                    cropRect = blend.cropRect,
+                                                    maskBitmap = blend.maskBitmap,
+                                                    resultBitmap = resultBitmap
+                                                )
+                                                resultBitmap.recycle()          // 合成完成即回收解码产物
+                                                composited
+                                            }.onFailure { error ->
+                                                Log.w(TAG, "inpaint 贴回原图失败，回退保存原结果: ${error.message}")
+                                            }.getOrNull()
+                                        }
+                                    } else {
+                                        null
+                                    }
+                                    if (blendedBitmap != null) {
+                                        val saved = ImageExportUtils.saveBitmapToGallery(context, blendedBitmap)
+                                        blendedBitmap.recycle()
+                                        Toast.makeText(
+                                            context,
+                                            if (saved) "已贴回原图并保存到相册 Pictures/MagicWX" else "保存到相册失败",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        val saved = ImageExportUtils.saveToGallery(context, File(outputPath))
+                                        Toast.makeText(
+                                            context,
+                                            if (saved) "已保存到相册 Pictures/MagicWX" else "保存到相册失败",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            },
+                            enabled = state.outputPath.isNotBlank(),
+                            modifier = Modifier.testTag("save-image-to-gallery-button")
+                        ) { Text("保存到相册") }
+                        // H1 结果导出闭环：FileProvider 授权 content:// Uri 后 ACTION_SEND 分享
+                        OutlinedButton(
+                            onClick = {
+                                val shared = ImageExportUtils.shareImage(context, File(state.outputPath))
+                                if (!shared) {
+                                    Toast.makeText(context, "分享失败", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            enabled = state.outputPath.isNotBlank(),
+                            modifier = Modifier.testTag("share-image-button")
+                        ) { Text("分享") }
+                        OutlinedButton(onClick = onRetry, enabled = lastRequest != null) { Text("重试") }
+                        OutlinedButton(onClick = onCopyParams, enabled = lastRequest != null) { Text("复制参数") }
+                        OutlinedButton(onClick = onShowParams, enabled = lastRequest != null) { Text("参数详情") }
+                        OutlinedButton(
+                            onClick = onUpscale,
+                            enabled = state.outputPath.isNotBlank() && !state.isUpscaling  // 超分中禁止重复触发
+                        ) { Text(if (state.isUpscaling) "超分中…" else "超分") }
+                        // UltraFix 按钮：仅 NPU 模型（sd15npu/sdxl/anima）显示，CPU 隐藏
+                        if (imageBackendType in listOf("sd15npu", "sdxl", "anima")) {
+                            OutlinedButton(
+                                onClick = onUltrafix,
+                                enabled = state.outputPath.isNotBlank(),
+                                modifier = Modifier.testTag("localdream-result-ultrafix-button")
+                            ) { Text("UltraFix") }
+                        }
+                        // 结果图一键转图生图输入：免去重新选图步骤（内部喂图并跳提示词页）
+                        OutlinedButton(
+                            onClick = onSendToImg2Img,
+                            enabled = state.outputPath.isNotBlank(),
+                            modifier = Modifier.testTag("send-to-img2img")
+                        ) { Text("发到图生图") }
+                        OutlinedButton(
+                            onClick = onSendToInpaint,
+                            enabled = state.outputPath.isNotBlank(),
+                            modifier = Modifier.testTag("send-to-inpaint")
+                        ) { Text("发到局部重绘") }
+                    }
+                    // 超分失败原因紧跟操作区展示
+                    if (state.upscaleErrorMessage.isNotBlank()) {
+                        Text(
+                            text = "超分失败：${state.upscaleErrorMessage}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+            // 超分成功后展示放大图与输出路径
+            if (state.upscaleOutputPath.isNotBlank()) {
+                item {
+                    LocalDreamSectionCard(title = "超分结果") {
+                        val upscaledBitmap = remember(state.upscaleOutputPath) {
+                            BitmapFactory.decodeFile(state.upscaleOutputPath)  // 解码失败时降级为纯文本路径
+                        }
+                        if (upscaledBitmap != null) {
                             Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "生成图片",
+                                bitmap = upscaledBitmap.asImageBitmap(),
+                                contentDescription = "超分图片",
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(300.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                                    // 点击结果图进入全屏可缩放预览（ZoomableImageOverlay）
-                                    .clickable { fullscreenTarget = "output" }
-                                    .testTag("generated-image-preview")
+                                    // 超分图同样支持点击全屏缩放预览
+                                    .clickable { fullscreenTarget = "upscaled" }
                             )
                         }
                         Text(
-                            text = "生成完成 · ${formatDuration(state.durationMillis)}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = state.outputPath,
+                            text = "超分输出：${state.upscaleOutputPath}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.testTag("generated-image-path")
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
-                    state.errorMessage.isNotBlank() -> {
-                        Text(
-                            text = "生成失败：${state.errorMessage}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.testTag("image-generation-error")
-                        )
-                    }
-                    state.isGenerating -> {
-                        CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                        Text("生成中，请在提示词页查看实时进度。")
-                    }
-                    else -> {
-                        Text("暂无结果。先回到提示词页开始生成。")
-                        Button(onClick = onGoToPrompt, shape = RoundedCornerShape(12.dp)) {
-                            Text("去生成")
-                        }
                     }
                 }
             }
-        }
-        item {
-            LocalDreamSectionCard(title = "快捷操作") {
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // H1 结果导出闭环：MediaStore 写入相册 Pictures/MagicWX 目录。
-                    // inpaint 且具备贴回上下文时：先把结果按裁剪矩形羽化贴回原图再保存，
-                    // 让用户拿到"修改后的原照片"而不是孤立 512 结果块；贴回失败自动回退保存原结果
-                    OutlinedButton(
-                        onClick = {
-                            val outputPath = state.outputPath
-                            val blend = inpaintBlendContext
-                            exportScope.launch {
-                                val blendedBitmap = if (blend != null) {
-                                    withContext(Dispatchers.IO) {
-                                        runCatching {
-                                            val resultBitmap = BitmapFactory.decodeFile(outputPath)
-                                                ?: error("无法解码结果图: $outputPath")
-                                            val composited = InpaintBlendUtils.blendInpaintResult(
-                                                originalBitmap = blend.originalBitmap,
-                                                cropRect = blend.cropRect,
-                                                maskBitmap = blend.maskBitmap,
-                                                resultBitmap = resultBitmap
-                                            )
-                                            resultBitmap.recycle()          // 合成完成即回收解码产物
-                                            composited
-                                        }.onFailure { error ->
-                                            Log.w(TAG, "inpaint 贴回原图失败，回退保存原结果: ${error.message}")
-                                        }.getOrNull()
-                                    }
-                                } else {
-                                    null
-                                }
-                                if (blendedBitmap != null) {
-                                    val saved = ImageExportUtils.saveBitmapToGallery(context, blendedBitmap)
-                                    blendedBitmap.recycle()
-                                    Toast.makeText(
-                                        context,
-                                        if (saved) "已贴回原图并保存到相册 Pictures/MagicWX" else "保存到相册失败",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                } else {
-                                    val saved = ImageExportUtils.saveToGallery(context, File(outputPath))
-                                    Toast.makeText(
-                                        context,
-                                        if (saved) "已保存到相册 Pictures/MagicWX" else "保存到相册失败",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            }
-                        },
-                        enabled = state.outputPath.isNotBlank(),
-                        modifier = Modifier.testTag("save-image-to-gallery-button")
-                    ) { Text("保存到相册") }
-                    // H1 结果导出闭环：FileProvider 授权 content:// Uri 后 ACTION_SEND 分享
-                    OutlinedButton(
-                        onClick = {
-                            val shared = ImageExportUtils.shareImage(context, File(state.outputPath))
-                            if (!shared) {
-                                Toast.makeText(context, "分享失败", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        enabled = state.outputPath.isNotBlank(),
-                        modifier = Modifier.testTag("share-image-button")
-                    ) { Text("分享") }
-                    OutlinedButton(onClick = onRetry, enabled = lastRequest != null) { Text("重试") }
-                    OutlinedButton(onClick = onCopyParams, enabled = lastRequest != null) { Text("复制参数") }
-                    OutlinedButton(onClick = onShowParams, enabled = lastRequest != null) { Text("参数详情") }
-                    OutlinedButton(
-                        onClick = onUpscale,
-                        enabled = state.outputPath.isNotBlank() && !state.isUpscaling  // 超分中禁止重复触发
-                    ) { Text(if (state.isUpscaling) "超分中…" else "超分") }
-                    // UltraFix 按钮：仅 NPU 模型（sd15npu/sdxl/anima）显示，CPU 隐藏
-                    if (imageBackendType in listOf("sd15npu", "sdxl", "anima")) {
-                        OutlinedButton(
-                            onClick = onUltrafix,
-                            enabled = state.outputPath.isNotBlank(),
-                            modifier = Modifier.testTag("localdream-result-ultrafix-button")
-                        ) { Text("UltraFix") }
-                    }
-                    // 结果图一键转图生图输入：免去重新选图步骤（内部喂图并跳提示词页）
-                    OutlinedButton(
-                        onClick = onSendToImg2Img,
-                        enabled = state.outputPath.isNotBlank(),
-                        modifier = Modifier.testTag("send-to-img2img")
-                    ) { Text("发到图生图") }
-                    OutlinedButton(
-                        onClick = onSendToInpaint,
-                        enabled = state.outputPath.isNotBlank(),
-                        modifier = Modifier.testTag("send-to-inpaint")
-                    ) { Text("发到局部重绘") }
-                }
-                // 超分失败原因紧跟操作区展示
-                if (state.upscaleErrorMessage.isNotBlank()) {
-                    Text(
-                        text = "超分失败：${state.upscaleErrorMessage}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-        }
-        // 超分成功后展示放大图与输出路径
-        if (state.upscaleOutputPath.isNotBlank()) {
-            item {
-                LocalDreamSectionCard(title = "超分结果") {
-                    val upscaledBitmap = remember(state.upscaleOutputPath) {
-                        BitmapFactory.decodeFile(state.upscaleOutputPath)  // 解码失败时降级为纯文本路径
-                    }
-                    if (upscaledBitmap != null) {
-                        Image(
-                            bitmap = upscaledBitmap.asImageBitmap(),
-                            contentDescription = "超分图片",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(300.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                // 超分图同样支持点击全屏缩放预览
-                                .clickable { fullscreenTarget = "upscaled" }
-                        )
-                    }
-                    Text(
-                        text = "超分输出：${state.upscaleOutputPath}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-        // P2: 底部缩略图历史条（最近 N 条，横向滚动）
-        if (history.isNotEmpty()) {
-            item {
-                LocalDreamSectionCard(title = "历史记录") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        history.take(20).forEach { entry ->
-                            val thumbPath = entry.thumbnailPath
-                            val thumbBitmap = remember(thumbPath) {
-                                if (thumbPath != null) {
-                                    runCatching {
-                                        BitmapFactory.decodeFile(thumbPath)
-                                    }.getOrNull()
-                                } else null
-                            }
-                            Box(
+            // 按模型分组的历史缩略图：每组标题模型名 + 该模型历史缩略图横向滚动条
+            if (groupedHistory.isNotEmpty()) {
+                groupedHistory.forEach { (modelId, entries) ->
+                    item(key = "history-group-$modelId") {
+                        val modelName = ModelRegistry.findById(modelId)?.name
+                            ?: modelId.ifBlank { "未命名模型" }
+                        LocalDreamSectionCard(
+                            title = "历史记录",
+                            trailing = modelName
+                        ) {
+                            Row(
                                 modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    .clickable {
-                                        // tap 跳全屏预览：直接设置 fullscreenTarget 为历史条目路径
-                                        fullscreenTarget = entry.outputPath
-                                    }
-                                    .testTag("history-thumb-${entry.id}")
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                if (thumbBitmap != null) {
-                                    Image(
-                                        bitmap = thumbBitmap.asImageBitmap(),
-                                        contentDescription = "历史缩略图",
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    // 无缩略图时显示占位图标
+                                entries.take(20).forEach { entry ->
+                                    val thumbPath = entry.thumbnailPath
+                                    val thumbBitmap = remember(thumbPath) {
+                                        if (thumbPath != null) {
+                                            runCatching {
+                                                BitmapFactory.decodeFile(thumbPath)
+                                            }.getOrNull()
+                                        } else null
+                                    }
                                     Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
+                                        modifier = Modifier
+                                            .size(64.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                            .clickable {
+                                                // tap 跳全屏预览：直接设置 fullscreenTarget 为历史条目路径
+                                                fullscreenTarget = entry.outputPath
+                                            }
+                                            .testTag("history-thumb-${entry.id}")
                                     ) {
-                                        Text(
-                                            text = "?",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        if (thumbBitmap != null) {
+                                            Image(
+                                                bitmap = thumbBitmap.asImageBitmap(),
+                                                contentDescription = "历史缩略图",
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            // 无缩略图时显示占位图标
+                                            Box(
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "?",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -3360,6 +3430,25 @@ private fun LocalDreamResultPage(
                     }
                 }
             }
+        }
+        // 魔法棒超分 FAB：对齐 local-dream SmallFloatingActionButton（AutoFixHigh 图标）
+        SmallFloatingActionButton(
+            onClick = {
+                if (state.outputPath.isNotBlank() && !state.isUpscaling) {
+                    onUpscale()
+                }
+            },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp)
+                .testTag("result-upscale-fab"),
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        ) {
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = "超分"
+            )
         }
     }
 
@@ -3367,8 +3456,14 @@ private fun LocalDreamResultPage(
     val target = fullscreenTarget
     if (target != null) {
         val overlayPath = if (target == "upscaled") state.upscaleOutputPath else state.outputPath
-        val overlayBitmap = remember(overlayPath) {
-            if (overlayPath.isBlank()) null else BitmapFactory.decodeFile(overlayPath)
+        // 历史条目路径（非"output"/"upscaled"）直接作为路径
+        val finalPath = when (target) {
+            "output" -> state.outputPath
+            "upscaled" -> state.upscaleOutputPath
+            else -> target
+        }
+        val overlayBitmap = remember(finalPath) {
+            if (finalPath.isBlank()) null else BitmapFactory.decodeFile(finalPath)
         }
         ZoomableImageOverlay(
             bitmap = overlayBitmap,
@@ -3385,7 +3480,7 @@ private enum class HistoryFilter(val label: String) {
     NOT_FAVORITE("未收藏")
 }
 
-/** LocalDream 生图历史页（数据源为 Room 持久化历史，2 列缩略图网格展示） */
+/** LocalDream 生图历史页（数据源为 Room 持久化历史，按模型分组展示） */
 @Composable
 private fun LocalDreamHistoryPage(
     history: List<HistoryEntity>,
@@ -3680,23 +3775,73 @@ private fun LocalDreamHistoryPage(
                     TextButton(onClick = onClearHistory) { Text("清空全部") }
                 }
             }
-            // 2 列缩略图网格（对齐参照 ModelRunHistoryPage 的 LazyVerticalGrid 布局）
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+            // 按模型分组展示：每组标题模型名 + 该模型历史，2 列缩略图网格
+            val groupedList = remember(filteredHistory) {
+                filteredHistory.groupBy { it.modelId.ifBlank { "未命名模型" } }
+            }
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .testTag("history-grid"),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(filteredHistory, key = { it.id }) { item ->
-                    HistoryGridCard(
-                        item = item,
-                        timestampFormat = timestampFormat,
-                        onClick = { overlayEntity = item },           // 点击网格项进全屏查看
-                        onSetFavorite = onSetFavorite
-                    )
+                groupedList.forEach { (modelId, entries) ->
+                    val modelName = ModelRegistry.findById(modelId)?.name
+                        ?: modelId.ifBlank { "未命名模型" }
+                    // 模型分组标题：对齐 local-dream 分组布局
+                    item(key = "history-section-$modelId") {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.surface,
+                            tonalElevation = 2.dp
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = modelName,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "${entries.size} 张",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    // 2 列网格：每行两个卡片
+                    items(
+                        entries.chunked(2),
+                        key = { chunk -> "history-row-${modelId}-${chunk.first().id}" }
+                    ) { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            row.forEach { item ->
+                                Box(modifier = Modifier.weight(1f)) {
+                                    HistoryGridCard(
+                                        item = item,
+                                        timestampFormat = timestampFormat,
+                                        onClick = { overlayEntity = item },
+                                        onSetFavorite = onSetFavorite
+                                    )
+                                }
+                            }
+                            // 单数行补齐占位，保持网格对齐
+                            if (row.size < 2) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
                 }
             }
         }
