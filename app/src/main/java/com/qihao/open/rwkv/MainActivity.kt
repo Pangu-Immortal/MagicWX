@@ -65,6 +65,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -1120,6 +1123,7 @@ fun ImageGenerationScreen(
     // 复用 copyLocalDreamParamsToClipboard 的 key=value 格式做逆解析，匹配到即弹窗让用户勾选字段
     var importParamsDialogVisible by remember { mutableStateOf(false) }
     var clipboardParams by remember { mutableStateOf<Map<String, String>?>(null) }
+    var showAdvancedSettings by remember { mutableStateOf(false) }              // 高级设置弹窗：对齐 local-dream AdvancedSettingsDialog
     var lastProcessedClipboardHash by remember { mutableStateOf(0) }
     // 各字段勾选状态：默认全选
     var importSelectedFields by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -1493,47 +1497,7 @@ fun ImageGenerationScreen(
                     negativeTokenEstimate = negativeTokenEstimate,
                     generationMode = generationMode,
                     onGenerationModeChange = { generationMode = it },
-                    steps = steps,
-                    onStepsChange = { steps = it },
-                    cfg = cfg,
-                    onCfgChange = { cfg = it },
-                    seedText = seedText,
-                    onSeedChange = { seedText = it },
-                    width = width,
-                    height = height,
-                    onSizeChange = { nextWidth, nextHeight ->
-                        width = nextWidth
-                        height = nextHeight
-                    },
-                    scheduler = scheduler,
-                    onSchedulerChange = { scheduler = it },
-                    aspectRatio = aspectRatio,
-                    onAspectRatioChange = { aspectRatio = it },
-                    denoiseStrength = denoiseStrength,
-                    onDenoiseStrengthChange = { denoiseStrength = it },
                     batchCount = batchCount,
-                    onBatchCountChange = { batchCount = it },
-                    showDiffusionProcess = showDiffusionProcess,
-                    onShowDiffusionProcessChange = { showDiffusionProcess = it },
-                    previewStride = previewStride,
-                    onPreviewStrideChange = { previewStride = it },
-                    outputFormat = outputFormat,
-                    onOutputFormatChange = { outputFormat = it },
-                    ultrafixSteps = ultrafixSteps,
-                    onUltrafixStepsChange = { nextSteps ->
-                        ultrafixSteps = nextSteps
-                        ultrafixDenoiseSteps = ultrafixDenoiseSteps.coerceAtMost(nextSteps)
-                    },
-                    ultrafixDenoiseSteps = ultrafixDenoiseSteps,
-                    onUltrafixDenoiseStepsChange = { ultrafixDenoiseSteps = it },
-                    ultrafixQualityDenoise = ultrafixQualityDenoise,
-                    onUltrafixQualityDenoiseChange = { ultrafixQualityDenoise = it },
-                    lowram = lowram,
-                    onLowramChange = { lowram = it },
-                    seqDit = seqDit,
-                    onSeqDitChange = { seqDit = it },
-                    patch = patch,
-                    imageBackendType = currentModelInfo?.imageBackendType.orEmpty(),
                     importedImage = importedImage,
                     importedMask = importedMask,
                     onSelectImage = { imagePickerLauncher.launch("image/*") },
@@ -1573,8 +1537,7 @@ fun ImageGenerationScreen(
                     // 停止按钮不直接中断：先弹"停止本次生成？"确认，防长任务误触丢失
                     onStop = { showStopConfirmDialog = true },
                     onShowParams = { showParamsDialog = true },
-                    onReset = { showResetConfirmDialog = true },
-                    lastReturnedSeed = lastReturnedSeed,
+                    onShowAdvancedSettings = { showAdvancedSettings = true },
                     promptTagController = promptTagController,
                     modifier = Modifier
                         .weight(1f)
@@ -1857,6 +1820,104 @@ fun ImageGenerationScreen(
             runtimeText = imageInferenceBackend.backend.displayName,
             onDismiss = { showParamsDialog = false },
             onCopy = { copyLocalDreamParamsToClipboard(context, currentRequest()) }
+        )
+    }
+
+    // 高级设置弹窗：对齐 local-dream AdvancedSettingsDialog，参数控件从 prompt 页移入
+    if (showAdvancedSettings) {
+        AdvancedSettingsDialog(
+            steps = steps,
+            onStepsChange = { steps = it },
+            cfg = cfg,
+            onCfgChange = { cfg = it },
+            seedText = seedText,
+            onSeedChange = { seedText = it },
+            width = width,
+            height = height,
+            onSizeChange = { w, h -> width = w; height = h },
+            scheduler = scheduler,
+            onSchedulerChange = { scheduler = it },
+            denoiseStrength = denoiseStrength,
+            onDenoiseStrengthChange = { denoiseStrength = it },
+            showDenoise = generationMode != LocalDreamGenerationMode.TEXT_TO_IMAGE,
+            batchCount = batchCount,
+            onBatchCountChange = { batchCount = it },
+            showDiffusionProcess = showDiffusionProcess,
+            onShowDiffusionProcessChange = { showDiffusionProcess = it },
+            previewStride = previewStride,
+            onPreviewStrideChange = { previewStride = it },
+            outputFormat = outputFormat,
+            onOutputFormatChange = { outputFormat = it },
+            ultrafixSteps = ultrafixSteps,
+            onUltrafixStepsChange = { nextSteps ->
+                ultrafixSteps = nextSteps
+                ultrafixDenoiseSteps = ultrafixDenoiseSteps.coerceAtMost(nextSteps)
+            },
+            ultrafixDenoiseSteps = ultrafixDenoiseSteps,
+            onUltrafixDenoiseStepsChange = { ultrafixDenoiseSteps = it },
+            ultrafixQualityDenoise = ultrafixQualityDenoise,
+            onUltrafixQualityDenoiseChange = { ultrafixQualityDenoise = it },
+            lowram = lowram,
+            onLowramChange = { lowram = it },
+            seqDit = seqDit,
+            onSeqDitChange = { seqDit = it },
+            patch = patch,
+            imageBackendType = currentModelInfo?.imageBackendType.orEmpty(),
+            lastReturnedSeed = lastReturnedSeed,
+            onUseLastSeed = { seedText = lastReturnedSeed.toString() },
+            onImportFromClipboard = {
+                // 复用现有剪贴板检测逻辑，弹窗让用户勾选字段
+                val clipboard = context.getSystemService(ClipboardManager::class.java)
+                val clip = clipboard.primaryClip
+                if (clip != null && clip.itemCount > 0) {
+                    val text = clip.getItemAt(0).text?.toString() ?: ""
+                    val params = parseLocalDreamParamsFromClipboard(text)
+                    if (params.isNotEmpty()) {
+                        clipboardParams = params
+                        importSelectedFields = params.keys.toSet()
+                        importParamsDialogVisible = true
+                        Log.d(TAG, "高级设置导入剪贴板参数: ${params.size} 字段")
+                    } else {
+                        Toast.makeText(context, "剪贴板未检测到共享参数", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Toast.makeText(context, "剪贴板为空", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onShare = {
+                // 分享当前参数为文本：对齐 local-dream onShare
+                val text = buildString {
+                    appendLine("prompt=${promptText}")
+                    appendLine("negative_prompt=${negativePromptText}")
+                    appendLine("mode=${generationMode.wireValue}")
+                    appendLine("steps=${steps}")
+                    appendLine("cfg=${cfg}")
+                    appendLine("seed=${seedText.ifBlank { "0" }}")
+                    appendLine("size=${width}x${height}")
+                    appendLine("scheduler=${scheduler}")
+                    appendLine("aspect_ratio=${aspectRatio}")
+                    appendLine("denoise_strength=${denoiseStrength}")
+                    appendLine("show_diffusion_process=${showDiffusionProcess}")
+                    appendLine("show_diffusion_stride=${previewStride}")
+                    appendLine("output_format=${outputFormat.wireValue}")
+                    appendLine("batch_count=${batchCount}")
+                    appendLine("ultrafix_steps=${ultrafixSteps}")
+                    appendLine("ultrafix_denoise_steps=${ultrafixDenoiseSteps}")
+                    appendLine("ultrafix_quality_denoise=${ultrafixQualityDenoise}")
+                    if (lowram) appendLine("lowram=${lowram}")
+                    if (seqDit) appendLine("seq_dit=${seqDit}")
+                    if (patch.isNotBlank()) appendLine("patch=${patch}")
+                }
+                val sendIntent = android.content.Intent().apply {
+                    action = android.content.Intent.ACTION_SEND
+                    putExtra(android.content.Intent.EXTRA_TEXT, text)
+                    type = "text/plain"
+                }
+                context.startActivity(android.content.Intent.createChooser(sendIntent, "分享生成参数"))
+                Log.d(TAG, "已分享生图参数: ${text.lines().size} 字段")
+            },
+            onReset = { showResetConfirmDialog = true },
+            onDismiss = { showAdvancedSettings = false }
         )
     }
 
@@ -2143,6 +2204,10 @@ private fun LocalDreamRunTabs(
 }
 
 /** LocalDream 提示词与参数页 */
+/**
+ * 提示词页（简化版）：对齐 local-dream PromptPage，参数控件移入 AdvancedSettingsDialog
+ * 仅保留：介绍 + banner + mode 选择 + prompt 输入 + negative 输入 + inputImage + 高级设置按钮 + 生成按钮区
+ */
 @Composable
 private fun LocalDreamPromptPage(
     promptText: String,
@@ -2153,41 +2218,7 @@ private fun LocalDreamPromptPage(
     negativeTokenEstimate: Int,
     generationMode: LocalDreamGenerationMode,
     onGenerationModeChange: (LocalDreamGenerationMode) -> Unit,
-    steps: Int,
-    onStepsChange: (Int) -> Unit,
-    cfg: Float,
-    onCfgChange: (Float) -> Unit,
-    seedText: String,
-    onSeedChange: (String) -> Unit,
-    width: Int,
-    height: Int,
-    onSizeChange: (Int, Int) -> Unit,
-    scheduler: String,
-    onSchedulerChange: (String) -> Unit,
-    aspectRatio: String,                       // M4：SD1.5 CPU 阶段不渲染比例行，仅保留用于持久化透传
-    onAspectRatioChange: (String) -> Unit,     // M4：同上，SDXL 阶段恢复渲染
-    denoiseStrength: Float,
-    onDenoiseStrengthChange: (Float) -> Unit,
-    batchCount: Int,
-    onBatchCountChange: (Int) -> Unit,
-    showDiffusionProcess: Boolean,
-    onShowDiffusionProcessChange: (Boolean) -> Unit,
-    previewStride: Int,
-    onPreviewStrideChange: (Int) -> Unit,
-    outputFormat: LocalDreamImageWireFormat,
-    onOutputFormatChange: (LocalDreamImageWireFormat) -> Unit,
-    ultrafixSteps: Int,
-    onUltrafixStepsChange: (Int) -> Unit,
-    ultrafixDenoiseSteps: Int,
-    onUltrafixDenoiseStepsChange: (Int) -> Unit,
-    ultrafixQualityDenoise: Boolean,
-    onUltrafixQualityDenoiseChange: (Boolean) -> Unit,
-    lowram: Boolean,                                                         // SDXL/Anima 低内存模式
-    onLowramChange: (Boolean) -> Unit,                                       // 低内存模式切换回调
-    seqDit: Boolean,                                                         // Anima 序列化 DiT
-    onSeqDitChange: (Boolean) -> Unit,                                       // 序列化 DiT 切换回调
-    patch: String,                                                           // 当前分辨率 patch 文件路径
-    imageBackendType: String,                                                // 当前模型后端类型：用于条件显示 NPU 专属控件
+    batchCount: Int,                                                         // 生成按钮文案用
     importedImage: LocalDreamImportedImage?,
     importedMask: LocalDreamImportedImage?,
     onSelectImage: () -> Unit,
@@ -2199,8 +2230,7 @@ private fun LocalDreamPromptPage(
     onGenerate: () -> Unit,
     onStop: () -> Unit,
     onShowParams: () -> Unit,
-    onReset: () -> Unit,                                                     // 重置参数到模型默认值
-    lastReturnedSeed: Long,                                              // 最近一次成功生成的 seed，供种子回填按钮
+    onShowAdvancedSettings: () -> Unit,                                      // 打开高级设置弹窗
     promptTagController: PromptFieldController,                              // Tag 自动补全控制器
     modifier: Modifier = Modifier
 ) {
@@ -2256,70 +2286,30 @@ private fun LocalDreamPromptPage(
                 onClearInputImage = onClearInputImage
             )
         }
-        // 种子回填按钮：仅在最近一次成功生成后可用
-        if (lastReturnedSeed > 0L) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+        // 高级设置按钮：对齐 local-dream PromptPage :1778-1795
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = onShowAdvancedSettings,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                    modifier = Modifier.testTag("localdream-advanced-settings-button")
                 ) {
                     Text(
-                        text = "上次种子: $lastReturnedSeed",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "高级设置",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(end = 4.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    TextButton(
-                        onClick = { onSeedChange(lastReturnedSeed.toString()) }
-                    ) { Text("使用上次种子") }
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "高级设置",
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
-        }
-        item {
-            // M4：aspectRatio/onAspectRatioChange 仍保留在本页签名中用于持久化与协议透传，
-            // 但不再下发到参数卡渲染（SD1.5 CPU native 不消费 aspect_ratio，SDXL 阶段恢复）
-            LocalDreamParameterCard(
-                steps = steps,
-                onStepsChange = onStepsChange,
-                cfg = cfg,
-                onCfgChange = onCfgChange,
-                seedText = seedText,
-                onSeedChange = onSeedChange,
-                width = width,
-                height = height,
-                onSizeChange = onSizeChange,
-                scheduler = scheduler,
-                onSchedulerChange = onSchedulerChange,
-                denoiseStrength = denoiseStrength,
-                onDenoiseStrengthChange = onDenoiseStrengthChange,
-                showDenoise = generationMode != LocalDreamGenerationMode.TEXT_TO_IMAGE
-            )
-        }
-        item {
-            LocalDreamAdvancedCard(
-                batchCount = batchCount,
-                onBatchCountChange = onBatchCountChange,
-                showDiffusionProcess = showDiffusionProcess,
-                onShowDiffusionProcessChange = onShowDiffusionProcessChange,
-                previewStride = previewStride,
-                onPreviewStrideChange = onPreviewStrideChange,
-                outputFormat = outputFormat,
-                onOutputFormatChange = onOutputFormatChange,
-                ultrafixSteps = ultrafixSteps,
-                onUltrafixStepsChange = onUltrafixStepsChange,
-                ultrafixDenoiseSteps = ultrafixDenoiseSteps,
-                onUltrafixDenoiseStepsChange = onUltrafixDenoiseStepsChange,
-                ultrafixQualityDenoise = ultrafixQualityDenoise,
-                onUltrafixQualityDenoiseChange = onUltrafixQualityDenoiseChange,
-                lowram = lowram,
-                onLowramChange = onLowramChange,
-                seqDit = seqDit,
-                onSeqDitChange = onSeqDitChange,
-                patch = patch,
-                imageBackendType = imageBackendType,
-                onReset = onReset
-            )
         }
         item {
             LocalDreamProgressCard(
@@ -2795,6 +2785,197 @@ private fun LocalDreamAdvancedCard(
             Text("重置参数")
         }
     }
+}
+
+/**
+ * 高级设置弹窗：对齐 local-dream AdvancedSettingsDialog，包含所有参数控件
+ * 复用现有 LocalDreamParameterCard 和 LocalDreamAdvancedCard 的控件逻辑
+ * title 行含 import（剪贴板）/share/reset/使用上次种子 按钮
+ */
+@Composable
+private fun AdvancedSettingsDialog(
+    steps: Int,
+    onStepsChange: (Int) -> Unit,
+    cfg: Float,
+    onCfgChange: (Float) -> Unit,
+    seedText: String,
+    onSeedChange: (String) -> Unit,
+    width: Int,
+    height: Int,
+    onSizeChange: (Int, Int) -> Unit,
+    scheduler: String,
+    onSchedulerChange: (String) -> Unit,
+    denoiseStrength: Float,
+    onDenoiseStrengthChange: (Float) -> Unit,
+    showDenoise: Boolean,
+    batchCount: Int,
+    onBatchCountChange: (Int) -> Unit,
+    showDiffusionProcess: Boolean,
+    onShowDiffusionProcessChange: (Boolean) -> Unit,
+    previewStride: Int,
+    onPreviewStrideChange: (Int) -> Unit,
+    outputFormat: LocalDreamImageWireFormat,
+    onOutputFormatChange: (LocalDreamImageWireFormat) -> Unit,
+    ultrafixSteps: Int,
+    onUltrafixStepsChange: (Int) -> Unit,
+    ultrafixDenoiseSteps: Int,
+    onUltrafixDenoiseStepsChange: (Int) -> Unit,
+    ultrafixQualityDenoise: Boolean,
+    onUltrafixQualityDenoiseChange: (Boolean) -> Unit,
+    lowram: Boolean,
+    onLowramChange: (Boolean) -> Unit,
+    seqDit: Boolean,
+    onSeqDitChange: (Boolean) -> Unit,
+    patch: String,
+    imageBackendType: String,
+    lastReturnedSeed: Long,
+    onUseLastSeed: () -> Unit,
+    onImportFromClipboard: () -> Unit,
+    onShare: () -> Unit,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "高级设置",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                // 导入参数（剪贴板）：对齐 local-dream :100-105；material-icons-core 不含 ContentPaste，用 TextButton 替代
+                TextButton(
+                    onClick = onImportFromClipboard,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.testTag("advanced-settings-import-button")
+                ) {
+                    Text("导入", style = MaterialTheme.typography.labelMedium)
+                }
+                // 分享参数：对齐 local-dream :106-111
+                IconButton(
+                    onClick = onShare,
+                    modifier = Modifier.testTag("advanced-settings-share-button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "分享参数"
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 4.dp)
+            ) {
+                // 使用上次种子按钮：对齐 local-dream :425-443
+                if (lastReturnedSeed > 0L) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "上次种子: $lastReturnedSeed",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TextButton(
+                            onClick = onUseLastSeed,
+                            modifier = Modifier.testTag("advanced-settings-use-last-seed")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "使用上次种子",
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .padding(end = 4.dp)
+                            )
+                            Text("使用上次种子")
+                        }
+                    }
+                }
+                // 采样参数卡：复用现有控件逻辑
+                LocalDreamParameterCard(
+                    steps = steps,
+                    onStepsChange = onStepsChange,
+                    cfg = cfg,
+                    onCfgChange = onCfgChange,
+                    seedText = seedText,
+                    onSeedChange = onSeedChange,
+                    width = width,
+                    height = height,
+                    onSizeChange = onSizeChange,
+                    scheduler = scheduler,
+                    onSchedulerChange = onSchedulerChange,
+                    denoiseStrength = denoiseStrength,
+                    onDenoiseStrengthChange = onDenoiseStrengthChange,
+                    showDenoise = showDenoise
+                )
+                // 高级与预览卡：复用现有控件逻辑
+                LocalDreamAdvancedCard(
+                    batchCount = batchCount,
+                    onBatchCountChange = onBatchCountChange,
+                    showDiffusionProcess = showDiffusionProcess,
+                    onShowDiffusionProcessChange = onShowDiffusionProcessChange,
+                    previewStride = previewStride,
+                    onPreviewStrideChange = onPreviewStrideChange,
+                    outputFormat = outputFormat,
+                    onOutputFormatChange = onOutputFormatChange,
+                    ultrafixSteps = ultrafixSteps,
+                    onUltrafixStepsChange = onUltrafixStepsChange,
+                    ultrafixDenoiseSteps = ultrafixDenoiseSteps,
+                    onUltrafixDenoiseStepsChange = onUltrafixDenoiseStepsChange,
+                    ultrafixQualityDenoise = ultrafixQualityDenoise,
+                    onUltrafixQualityDenoiseChange = onUltrafixQualityDenoiseChange,
+                    lowram = lowram,
+                    onLowramChange = onLowramChange,
+                    seqDit = seqDit,
+                    onSeqDitChange = onSeqDitChange,
+                    patch = patch,
+                    imageBackendType = imageBackendType,
+                    onReset = onReset
+                )
+            }
+        },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // 重置按钮：对齐 local-dream :453-467
+                TextButton(
+                    onClick = onReset,
+                    modifier = Modifier.testTag("advanced-settings-reset-button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "重置",
+                        modifier = Modifier
+                            .size(20.dp)
+                            .padding(end = 4.dp)
+                    )
+                    Text("重置", color = MaterialTheme.colorScheme.error)
+                }
+                // 确认按钮：对齐 local-dream :469-471
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.testTag("advanced-settings-confirm-button")
+                ) {
+                    Text("确认")
+                }
+            }
+        }
+    )
 }
 
 /** 生成进度卡，保留 LocalDream 式中间预览位置 */
