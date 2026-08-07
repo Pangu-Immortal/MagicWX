@@ -363,15 +363,21 @@ private fun ModelSelectScreen(
                 modifier = Modifier.padding(bottom = 12.dp)
             )
 
-            // 本地离线能力说明条，帮助用户理解语言/生图模型的运行方式
-            ImageInferenceBackendBanner(
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
+            // 本地离线能力说明条：NPU 非骁龙 tab 由 NpuGateBanner 单行提示，不重复显示能力检测条
+            if (!(selectedTab == HomeModelTab.NPU_IMAGE && !DeviceSocCapability.qnnSupported())) {
+                ImageInferenceBackendBanner(
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
 
-            TabIntroCard(
-                selectedTab = selectedTab,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
+            // NPU tab 非骁龙由 NpuGateBanner 单行提示，不再显示 TabIntroCard（避免 NPU 提示占多行）
+            // 其余 tab（语言/CPU/NPU 骁龙）显示 TabIntroCard 说明
+            if (!(selectedTab == HomeModelTab.NPU_IMAGE && !DeviceSocCapability.qnnSupported())) {
+                TabIntroCard(
+                    selectedTab = selectedTab,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
 
             if (selectedTab == HomeModelTab.NPU_IMAGE && !DeviceSocCapability.qnnSupported()) {
                 // 非骁龙设备：网格仍完整展示 NPU/SDXL/Anima/超分目录，但统一挂门禁横幅，
@@ -628,25 +634,15 @@ private fun NpuGateBanner(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        Column(
+        // 精简单行提示：只占一行，明确本机无 NPU 能力 + 替代 CPU 生图
+        Text(
+            text = "本设备不支持 QNN/NPU 生图，请使用 CPU 生图",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            // 大标题：直接告知本机无 QNN/NPU 能力（物理事实，不是排期问题）
-            Text(
-                text = "本设备不支持 QNN/NPU",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            // 说明文案：明确替代路径是 CPU 生图，模型卡片仅展示不提供下载
-            Text(
-                text = "NPU 高速生图与超分需要骁龙移动平台；下方模型目录在本机不可下载，当前请使用 CPU 生图。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+                .padding(horizontal = 24.dp, vertical = 16.dp)
+        )
     }
 }
 
