@@ -198,7 +198,14 @@ object CustomModelImporter {
             verifiedOnDevice = true,                             // 已导入即视为已就绪
             adapterAvailable = true,                             // 用户手动导入，视为本机可用
             defaultPrompt = prompt,
-            defaultNegativePrompt = negativePrompt
+            defaultNegativePrompt = negativePrompt,
+            // ---- 对齐 local-dream createCustomModel L485-509 ----
+            generationSize = if (isSdxl || isAnima) 1024 else 512, // 对齐参照 L501
+            approximateSize = "自定义",                            // 对齐参照 L502："Custom"
+            runOnCpu = !(isNpu || isSdxl || isAnima),             // 对齐参照 L505: runOnCpu = !isNpu
+            isSdxl = isSdxl,                                      // 对齐参照 L507
+            isAnima = isAnima,                                     // 对齐参照 L508
+            isCustom = true,                                       // 对齐参照 L506
         )
     }
 

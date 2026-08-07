@@ -792,20 +792,51 @@ fun ModelCard(
         Column(
             modifier = Modifier.padding(12.dp)
         ) {
-            // 第一行：模型名称 + 置顶按钮
+            // 第一行：模型名称 + CPU/NPU 角标 + 置顶按钮
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = modelInfo.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                // 模型名称 + CPU/NPU 角标（对齐 local-dream ModelCard L2147-2166）
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
-                )
+                ) {
+                    Text(
+                        text = modelInfo.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    // 生图模型显示 CPU/NPU 角标（对齐 local-dream ModelCard badge）
+                    if (modelInfo.arch == ModelArch.STABLE_DIFFUSION) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = if (modelInfo.runOnCpu) {
+                                MaterialTheme.colorScheme.tertiaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.primaryContainer
+                            },
+                            contentColor = if (modelInfo.runOnCpu) {
+                                MaterialTheme.colorScheme.onTertiaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            }
+                        ) {
+                            Text(
+                                text = if (modelInfo.runOnCpu) "CPU" else "NPU",
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    .testTag("model-backend-badge-${modelInfo.id}")
+                            )
+                        }
+                    }
+                }
                 // P2: 置顶/取消置顶图标按钮
                 IconButton(
                     onClick = onPinToggle,
@@ -828,7 +859,7 @@ fun ModelCard(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // 参数量 + 量化方式
+            // 参数量 + 量化方式 + 生图模型额外信息行
             Row {
                 Text(
                     text = modelInfo.paramSize,
@@ -841,6 +872,15 @@ fun ModelCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // 生图模型显示最大分辨率（对齐 local-dream ModelCard L2218-2226）
+                if (modelInfo.arch == ModelArch.STABLE_DIFFUSION && modelInfo.generationSize > 0) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "${modelInfo.generationSize}x${modelInfo.generationSize}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -890,9 +930,13 @@ fun ModelCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 文件大小
+                // 文件大小：生图模型优先使用 approximateSize（对齐 local-dream），否则自动换算
                 Text(
-                    text = displayModelSize(modelInfo),
+                    text = if (modelInfo.approximateSize.isNotBlank()) {
+                        modelInfo.approximateSize
+                    } else {
+                        displayModelSize(modelInfo)
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -4402,7 +4446,11 @@ fun DownloadConfirmScreen(
                     InfoRow("架构", displayModelArch(info))
                     InfoRow("参数量", info.paramSize)
                     InfoRow("量化", info.quantization)
-                    InfoRow("预估大小", displayModelSize(info))
+                    // 生图模型显示最大分辨率（对齐 local-dream ModelCard）
+                    if (info.arch == ModelArch.STABLE_DIFFUSION && info.generationSize > 0) {
+                        InfoRow("最大分辨率", "${info.generationSize}x${info.generationSize}")
+                    }
+                    InfoRow("预估大小", if (info.approximateSize.isNotBlank()) info.approximateSize else displayModelSize(info))
                     InfoRow("可用状态", displayModelSupportStatus(info))
                 }
             }

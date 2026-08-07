@@ -143,8 +143,19 @@ data class ModelInfo(
     val adapterAvailable: Boolean = true,                       // adapter 是否已接入
     val unavailableReason: String = "",                         // 不可用原因
     val defaultPrompt: String? = null,                          // 模型专属默认正向提示词
-    val defaultNegativePrompt: String? = null                   // 模型专属默认负向提示词
+    val defaultNegativePrompt: String? = null,                  // 模型专属默认负向提示词
+    // ---- 以下字段对齐 local-dream Model.kt 数据类 ----
+    val generationSize: Int = 512,                              // 最大生图分辨率（512/1024），对齐 local-dream Model.generationSize
+    val approximateSize: String = "",                            // 人可读模型大小（"1.1GB"/"4.2GB"/"自定义"），对齐 local-dream Model.approximateSize
+    val runOnCpu: Boolean = false,                              // 是否 CPU 后端运行，对齐 local-dream Model.runOnCpu
+    val isSdxl: Boolean = false,                                // 是否 SDXL 架构，对齐 local-dream Model.isSdxl
+    val isAnima: Boolean = false,                               // 是否 Anima 架构，对齐 local-dream Model.isAnima
+    val isCustom: Boolean = false,                              // 是否自定义导入模型，对齐 local-dream Model.isCustom
+    val needsUpgrade: Boolean = false,                          // 是否需要升级格式（v3 marker），对齐 local-dream Model.needsUpgrade
 ) {
+    /** SDXL 和 Anima 均为固定 1024 画布，对齐 local-dream Model.usesFixedCanvas */
+    val usesFixedCanvas: Boolean
+        get() = isSdxl || isAnima
     /**
      * QNN 生图族设备门禁标记：QNN adapter 的可用性由设备 SoC 物理能力决定
      * （DeviceSocCapability 判定），不可用时属于"本机不支持"而非排期上的"即将支持"。
@@ -943,7 +954,11 @@ object ModelRegistry {
             adapterAvailable = true,
             unavailableReason = "",
             defaultPrompt = defaultPrompt,
-            defaultNegativePrompt = defaultNegativePrompt
+            defaultNegativePrompt = defaultNegativePrompt,
+            // ---- 对齐 local-dream createAnythingV5ModelCPU L671-691 ----
+            generationSize = 512,
+            approximateSize = "1.2GB",
+            runOnCpu = true,
         )
     }
 
@@ -973,7 +988,11 @@ object ModelRegistry {
             adapterAvailable = qnnSupported,
             unavailableReason = if (qnnSupported) "" else DeviceSocCapability.REASON_NO_QNN,
             defaultPrompt = defaultPrompt,
-            defaultNegativePrompt = defaultNegativePrompt
+            defaultNegativePrompt = defaultNegativePrompt,
+            // ---- 对齐 local-dream createAnythingV5Model L645-668 ----
+            generationSize = 512,
+            approximateSize = "1.1GB",
+            runOnCpu = false,
         )
     }
 
@@ -1006,7 +1025,12 @@ object ModelRegistry {
             adapterAvailable = supported,
             unavailableReason = reason,
             defaultPrompt = defaultPrompt,
-            defaultNegativePrompt = defaultNegativePrompt
+            defaultNegativePrompt = defaultNegativePrompt,
+            // ---- 对齐 local-dream createCyberRealisticV10Model L547-569 ----
+            generationSize = 1024,
+            approximateSize = "4.2GB",
+            runOnCpu = false,
+            isSdxl = true,
         )
     }
 
@@ -1040,7 +1064,12 @@ object ModelRegistry {
             adapterAvailable = supported,
             unavailableReason = reason,
             defaultPrompt = defaultPrompt,
-            defaultNegativePrompt = defaultNegativePrompt
+            defaultNegativePrompt = defaultNegativePrompt,
+            // ---- 对齐 local-dream Anima 模型（参照 createCustomModel L501: isAnima -> 1024） ----
+            generationSize = 1024,
+            approximateSize = "5.3GB",
+            runOnCpu = false,
+            isAnima = true,
         )
     }
 
@@ -1082,7 +1111,11 @@ object ModelRegistry {
             requiredRuntimeFiles = listOf("upscaler.bin"),
             verifiedOnDevice = false,
             adapterAvailable = qnnSupported,
-            unavailableReason = if (qnnSupported) "" else DeviceSocCapability.REASON_NO_QNN
+            unavailableReason = if (qnnSupported) "" else DeviceSocCapability.REASON_NO_QNN,
+            // ---- 对齐 local-dream UpscalerModel（超分模型无生图分辨率） ----
+            generationSize = 0,                                    // 超分模型不适用生图分辨率
+            approximateSize = "128MB",
+            runOnCpu = false,
         )
     }
 
@@ -1099,7 +1132,13 @@ object ModelRegistry {
         adapterAvailable: Boolean,
         unavailableReason: String,
         defaultPrompt: String? = null,
-        defaultNegativePrompt: String? = null
+        defaultNegativePrompt: String? = null,
+        // ---- 对齐 local-dream Model 工厂函数字段 ----
+        generationSize: Int = 512,
+        approximateSize: String = "",
+        runOnCpu: Boolean = false,
+        isSdxl: Boolean = false,
+        isAnima: Boolean = false,
     ): ModelInfo {
         return ModelInfo(
             id = id,
@@ -1133,7 +1172,13 @@ object ModelRegistry {
             adapterAvailable = adapterAvailable,
             unavailableReason = unavailableReason,
             defaultPrompt = defaultPrompt,
-            defaultNegativePrompt = defaultNegativePrompt
+            defaultNegativePrompt = defaultNegativePrompt,
+            // ---- 对齐 local-dream Model 工厂函数字段 ----
+            generationSize = generationSize,
+            approximateSize = approximateSize,
+            runOnCpu = runOnCpu,
+            isSdxl = isSdxl,
+            isAnima = isAnima,
         )
     }
 
